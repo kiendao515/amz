@@ -53,7 +53,8 @@ class CostOfGods {
 }
 class Result {
   constructor(sku, fnsku, sale_quantity, refund_quantity, product_sales, refund_amount, liquidations, gross_sales,
-    product_sales_tax) {
+    product_sales_tax, shipping_credits, shipping_credit_tax, gift_wrap_credits, gift_wrap_credits_tax, regulatory_fee,
+    regulatory_fee_tax, promotional_rebates, promotional_rebates_tax, marketplace_withheld_tax) {
     this.sku = sku;
     this.fnsku = fnsku;
     this.sale_quantity = sale_quantity;
@@ -63,13 +64,24 @@ class Result {
     this.liquidations = liquidations;
     this.gross_sales = gross_sales;
     this.product_sales_tax = product_sales_tax
+    this.shipping_credits = shipping_credits;
+    this.shipping_credit_tax = shipping_credit_tax;
+    this.gift_wrap_credits = gift_wrap_credits;
+    this.gift_wrap_credits_tax = gift_wrap_credits_tax;
+    this.regulatory_fee = regulatory_fee;
+    this.regulatory_fee_tax = regulatory_fee_tax;
+    this.promotional_rebates = promotional_rebates;
+    this.promotional_rebates_tax = promotional_rebates_tax;
+    this.marketplace_withheld_tax = marketplace_withheld_tax;
   }
 }
 
 function getSKUData(paymentList, costOfGods) {
   const skuData = {};
   paymentList.forEach(payment => {
-    const { sku, type, quantity, product_sales, product_sales_tax } = payment;
+    const { sku, type, quantity, product_sales, product_sales_tax, shipping_credits, shipping_credit_tax,
+    gift_wrap_credits , gift_wrap_credits_tax, regulatory_fee, regulatory_fee_tax, promotional_rebates,
+  promotional_rebates_tax, marketplace_withheld_tax} = payment;
     if (!skuData[sku]) {
       skuData[sku] = {
         sku,
@@ -79,7 +91,16 @@ function getSKUData(paymentList, costOfGods) {
         product_sales_refund: 0,
         liquidations: 0,
         gross_sales: 0,
-        product_sales_tax: 0
+        product_sales_tax: 0,
+        shipping_credits: 0,
+        shipping_credit_tax: 0,
+        gift_wrap_credits: 0,
+        gift_wrap_credits_tax : 0,
+        regulatory_fee: 0 ,
+        regulatory_fee_tax: 0,
+        promotional_rebates: 0,
+        promotional_rebates_tax: 0,
+        marketplace_withheld_tax: 0
       };
     }
     if (type === 'Order') {
@@ -97,6 +118,15 @@ function getSKUData(paymentList, costOfGods) {
       skuData[sku].gross_sales += product_sales
     }
     skuData[sku].product_sales_tax += product_sales_tax;
+    skuData[sku].shipping_credits += shipping_credits;
+    skuData[sku].shipping_credit_tax += shipping_credit_tax;
+    skuData[sku].gift_wrap_credits += gift_wrap_credits;
+    skuData[sku].gift_wrap_credits_tax += gift_wrap_credits_tax;
+    skuData[sku].regulatory_fee += regulatory_fee;
+    skuData[sku].regulatory_fee_tax+= regulatory_fee_tax;
+    skuData[sku].promotional_rebates += promotional_rebates;
+    skuData[sku].promotional_rebates_tax += promotional_rebates_tax;
+    skuData[sku].marketplace_withheld_tax += marketplace_withheld_tax
   });
 
   costOfGods.forEach(skuInfo => {
@@ -105,7 +135,7 @@ function getSKUData(paymentList, costOfGods) {
       skuData[sku].fnsku = fnsku;
     }
   });
-
+ 
   return Object.values(skuData).map(sku => new Result(
     sku.sku,
     sku.fnsku,
@@ -115,7 +145,16 @@ function getSKUData(paymentList, costOfGods) {
     sku.product_sales_refund,
     sku.liquidations,
     sku.gross_sales,
-    sku.product_sales_tax
+    sku.product_sales_tax,
+    sku.shipping_credits,
+    sku.shipping_credit_tax,
+    sku.gift_wrap_credits,
+    sku.gift_wrap_credits_tax,
+    sku.regulatory_fee,
+    sku.regulatory_fee_tax,
+    sku.promotional_rebates,
+    sku.promotional_rebates_tax,
+    sku.marketplace_withheld_tax
   ));
 }
 function GenerateFile() {
