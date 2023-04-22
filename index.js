@@ -40,95 +40,146 @@ class Payment {
   }
 }
 
-const worksheet = workbook.Sheets["Payment T3"];
-
-// Use XLSX.utils.sheet_to_json() to convert the worksheet to a JSON array
-const jsonArray = XLSX.utils.sheet_to_json(worksheet);
-let payments = []
-payments = jsonArray.map((row) => {
-  return new Payment(
-    row['date/time'],
-    row['settlement id'],
-    row.type,
-    row['order id'],
-    row.group,
-    row.sku,
-    row.description,
-    row.quantity,
-    row.marketplace,
-    row['account type'],
-    row.fulfillment,
-    row['order city'],
-    row['order state'],
-    row['order postal'],
-    row['tax collection model'],
-    row['product sales'],
-    row['product sales tax'],
-    row['shipping credits'],
-    row['shipping credits tax'],
-    row['gift wrap credits'],
-    row['giftwrap credits tax'],
-    row['Regulatory Fee'],
-    row['Tax On Regulatory Fee'],
-    row['promotional rebates'],
-    row['promotional rebates tax'],
-    row['marketplace withheld tax'],
-    row['selling fees'],
-    row['fba fees'],
-    row['other transaction fees'],
-    row.other,
-    row.total
-  );
-});
-
-function getSKUData(paymentList) {
-  const skuData = {};
-  
-  paymentList.forEach(payment => {
-    const { sku, type, quantity, product_sales, total } = payment;
-    
-    if (type === 'Order') {
-      if (!skuData[sku]) {
-        skuData[sku] = {
-          sku,
-          sale_quantity: 0,
-          refund_quantity: 0,
-          product_sales_order: 0,
-          product_sales_refund: 0,
-          refund_amount_order: 0,
-          refund_amount_refund: 0
-        };
-      }
-      
-      skuData[sku].sale_quantity += quantity;
-      skuData[sku].product_sales_order += product_sales;
-      skuData[sku].refund_amount_order += total;
-    }
-    
-    if (type === 'Refund') {
-      if (!skuData[sku]) {
-        skuData[sku] = {
-          sku,
-          sale_quantity: 0,
-          refund_quantity: 0,
-          product_sales_order: 0,
-          product_sales_refund: 0,
-          refund_amount_order: 0,
-          refund_amount_refund: 0
-        };
-      }
-      
-      skuData[sku].refund_quantity += quantity;
-      skuData[sku].product_sales_refund += product_sales;
-      skuData[sku].refund_amount_refund += total;
-    }
-  });
-  
-  return skuData;
+class CostOfGods {
+  constructor(sku, fnsku, product_group, tags, from_date, to_date, total_amount) {
+    this.sku = sku;
+    this.fnsku = fnsku;
+    this.product_group = product_group;
+    this.tags = tags;
+    this.from_date = from_date;
+    this.to_date = to_date;
+    this.total_amount = total_amount;
+  }
+}
+class Result {
+  constructor(sku, fnsku, sale_quantity, refund_quantity, product_sales, refund_amount, liquidations, gross_sales,
+    product_sales_tax) {
+    this.sku = sku;
+    this.fnsku = fnsku;
+    this.sale_quantity = sale_quantity;
+    this.refund_quantity = refund_quantity;
+    this.product_sales = product_sales;
+    this.refund_amount = refund_amount;
+    this.liquidations = liquidations;
+    this.gross_sales = gross_sales;
+    this.product_sales_tax = product_sales_tax
+  }
 }
 
-console.log(getSKUData(payments));
+function getSKUData(paymentList, costOfGods) {
+  const skuData = {};
+  paymentList.forEach(payment => {
+    const { sku, type, quantity, product_sales, product_sales_tax } = payment;
+    if (!skuData[sku]) {
+      skuData[sku] = {
+        sku,
+        sale_quantity: 0,
+        refund_quantity: 0,
+        product_sales_order: 0,
+        product_sales_refund: 0,
+        liquidations: 0,
+        gross_sales: 0,
+        product_sales_tax: 0
+      };
+    }
+    if (type === 'Order') {
+      skuData[sku].sale_quantity += quantity;
+      skuData[sku].product_sales_order += product_sales;
+      skuData[sku].gross_sales += product_sales
+    }
+    if (type === 'Refund') {
+      skuData[sku].refund_quantity += quantity;
+      skuData[sku].product_sales_refund += product_sales;
+      skuData[sku].gross_sales += product_sales
+    }
+    if (type === 'Liquidations') {
+      skuData[sku].liquidations += product_sales;
+      skuData[sku].gross_sales += product_sales
+    }
+    skuData[sku].product_sales_tax += product_sales_tax;
+  });
 
+  costOfGods.forEach(skuInfo => {
+    const { sku, fnsku } = skuInfo;
+    if (skuData[sku]) {
+      skuData[sku].fnsku = fnsku;
+    }
+  });
+
+  return Object.values(skuData).map(sku => new Result(
+    sku.sku,
+    sku.fnsku,
+    sku.sale_quantity,
+    sku.refund_quantity,
+    sku.product_sales_order,
+    sku.product_sales_refund,
+    sku.liquidations,
+    sku.gross_sales,
+    sku.product_sales_tax
+  ));
+}
+function GenerateFile() {
+  const worksheet = workbook.Sheets["Payment T3"];
+  const ws2 = workbook.Sheets["Cost of Goods"]
+
+  // Use XLSX.utils.sheet_to_json() to convert the worksheet to a JSON array
+  const jsonArray = XLSX.utils.sheet_to_json(worksheet);
+  let payments = []
+  payments = jsonArray.map((row) => {
+    return new Payment(
+      row['date/time'],
+      row['settlement id'],
+      row.type,
+      row['order id'],
+      row.group,
+      row.sku,
+      row.description,
+      row.quantity,
+      row.marketplace,
+      row['account type'],
+      row.fulfillment,
+      row['order city'],
+      row['order state'],
+      row['order postal'],
+      row['tax collection model'],
+      row['product sales'],
+      row['product sales tax'],
+      row['shipping credits'],
+      row['shipping credits tax'],
+      row['gift wrap credits'],
+      row['giftwrap credits tax'],
+      row['Regulatory Fee'],
+      row['Tax On Regulatory Fee'],
+      row['promotional rebates'],
+      row['promotional rebates tax'],
+      row['marketplace withheld tax'],
+      row['selling fees'],
+      row['fba fees'],
+      row['other transaction fees'],
+      row.other,
+      row.total
+    );
+  });
+
+  const arr2 = XLSX.utils.sheet_to_json(ws2);
+  let costOfGods = []
+  costOfGods = arr2.map((row) => {
+    return new CostOfGods(
+      row['Sku'],
+      row['Fnsku'],
+      row['Product Group'],
+      row['Tags'],
+      row['From Date'],
+      row['To Date'],
+      row['Total Amount']
+    );
+  });
+
+
+  console.log(getSKUData(payments, costOfGods));
+}
+
+GenerateFile()
 
 
 
