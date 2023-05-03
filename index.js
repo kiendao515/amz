@@ -82,11 +82,21 @@ class SurchargeFee {
     this.short_time_range_long_term_storage_fee = short_time_range_long_term_storage_fee
   }
 }
+class Adjustment{
+  constructor(date,fnsku,msku,quantity,disposition ) {
+    this.date = date;
+    this.fnsku= fnsku;
+    this.msku = msku;
+    this.quantity = quantity;
+    this.disposition= disposition;
+  }
+}
 class Result {
   constructor(sku, fnsku, sale_quantity, refund_quantity, product_sales, refund_amount, liquidations, gross_sales,
     product_sales_tax, shipping_credits, shipping_credit_tax, gift_wrap_credits, gift_wrap_credits_tax, regulatory_fee,
     regulatory_fee_tax, promotional_rebates, promotional_rebates_tax, marketplace_withheld_tax, referral_fees, fullfillment_fees, refund_commission, other_transaction_fee,
-    other_adjustment, gross_profits, ads, storage_fee, disposal_fee, aged_inventory_surcharge, gross_profits_overall) {
+    other_adjustment, gross_profits, ads, storage_fee, disposal_fee, aged_inventory_surcharge, gross_profits_overall, mcf_quantity, lost_quantity_by_aw,
+    adjusted_quantity_by_aw) {
     this.sku = sku;
     this.fnsku = fnsku;
     this.sale_quantity = sale_quantity;
@@ -115,17 +125,20 @@ class Result {
     this.storage_fee = storage_fee;
     this.disposal_fee = disposal_fee;
     this.aged_inventory_surcharge = aged_inventory_surcharge;
-    this.gross_profits_overall = gross_profits_overall
+    this.gross_profits_overall = gross_profits_overall;
+    this.mcf_quantity = mcf_quantity;
+    this.lost_quantity_by_aw = lost_quantity_by_aw;
+    this.adjusted_quantity_by_aw = adjusted_quantity_by_aw
   }
 }
 
-function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, removalFee, surChargeFee) {
+function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, removalFee, surChargeFee, adjustment) {
   const skuData = {};
   paymentList.forEach(payment => {
     const { sku, type, quantity, product_sales, product_sales_tax, shipping_credits, shipping_credit_tax,
       gift_wrap_credits, gift_wrap_credits_tax, regulatory_fee, regulatory_fee_tax, promotional_rebates,
       promotional_rebates_tax, marketplace_withheld_tax, selling_fee, fba_fee, other_transaction_fee, other,
-      total } = payment;
+      total, market_place, description } = payment;
     if (!skuData[sku]) {
       skuData[sku] = {
         sku,
@@ -154,7 +167,10 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, re
         storage_fee: 0,
         disposal_fee: 0,
         aged_inventory_surcharge: 0,
-        gross_profits_overall: 0
+        gross_profits_overall: 0,
+        mcf_quantity: 0,
+        lost_quantity_by_aw: 0,
+        adjusted_quantity_by_aw: 0
       };
     }
     if (type === 'Order') {
@@ -172,6 +188,12 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, re
     if (type === 'Liquidations') {
       skuData[sku].liquidations += product_sales;
       skuData[sku].gross_sales += product_sales
+    }
+    if(market_place?.slice(0, 3) === "sim" || market_place?.slice(1, 4) === "sim"){
+      skuData[sku].mcf_quantity += quantity
+    }
+    if(description === 'FBA Inventory Reimbursement - General Adjustment'){
+      skuData[sku].adjusted_quantity_by_aw += quantity;
     }
     skuData[sku].product_sales_tax += product_sales_tax;
     skuData[sku].shipping_credits += shipping_credits;
@@ -228,6 +250,13 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, re
       }
     });
   })
+  adjustment.forEach(a => {
+    Object.values(skuData).forEach(v => {
+      if(a.msku === v.sku){
+        v.lost_quantity_by_aw += a.quantity;
+      }
+    });
+  });
   
   return Object.values(skuData).map(sku => new Result(
     sku.sku,
@@ -258,7 +287,10 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, re
     sku.storage_fee,
     sku.disposal_fee,
     sku.aged_inventory_surcharge,
-    sku.gross_profits + sku.aged_inventory_surcharge
+    sku.gross_profits + sku.aged_inventory_surcharge,
+    sku.mcf_quantity,
+    sku.lost_quantity_by_aw,
+    sku.adjusted_quantity_by_aw
   ));
 }
 function GenerateFile() {
@@ -269,6 +301,7 @@ function GenerateFile() {
   const ws5 = workbook.Sheets["Storage Fee T3"]
   const ws6 = workbook.Sheets["Removal Fee T3"]
   const ws7 = workbook.Sheets["Surcharge Fee T3"]
+  const ws8 = workbook.Sheets["Adjustments T3"]
 
   // Use XLSX.utils.sheet_to_json() to convert the worksheet to a JSON array
   const jsonArray = XLSX.utils.sheet_to_json(worksheet);
@@ -364,11 +397,121 @@ function GenerateFile() {
     )
   })
 
-  let rs = getSKUData(payments, costOfGods, adsPortfolio, adsT3, storageFee, removalFee, surChargeFee);
+  const arr8 = XLSX.utils.sheet_to_json(ws8)
+  let adjustment = arr8.map((row) => {
+    return new Adjustment(
+      row['Date'],
+      row['FNSKU'],
+      row['MSKU'],
+      row['Quantity'],
+      row['Disposition']
+    )
+  })
+
+  let rs = getSKUData(payments, costOfGods, adsPortfolio, adsT3, storageFee, removalFee, surChargeFee, adjustment);
   console.log(rs);
-  const newWorksheet = XLSX.utils.json_to_sheet(rs);
-  XLSX.utils.book_append_sheet(workbook, newWorksheet, "File hoan thanh");
-  XLSX.writeFile(workbook, 'example.xlsx');
+  // for (let i = 0; i < rs.length; i++) {
+  //   let obj = rs[i];
+  //   let sale_quantity = obj.sale_quantity;
+  //   let refund_quantity= obj.refund_quantity;
+  //   let product_sales_order= obj.product_sales;
+  //   let product_sales_refund= obj.refund_amount;
+  //   let liquidations= obj.liquidations;
+  //   let gross_sales = obj.gross_sales;
+  //   let product_sales_tax= obj.product_sales_tax;
+  //   let  shipping_credits= obj.shipping_credits
+  //   let shipping_credit_tax= obj.shipping_credit_tax
+  //   let gift_wrap_credits= obj.gift_wrap_credits
+  //   let gift_wrap_credits_tax= obj.gift_wrap_credits_tax
+  //   let regulatory_fee= obj.regulatory_fee
+  //   let regulatory_fee_tax= obj.regulatory_fee_tax
+  //   let  promotional_rebates= obj.promotional_rebates
+  //   let  promotional_rebates_tax= obj.promotional_rebates_tax
+  //   let  marketplace_withheld_tax= obj.marketplace_withheld_tax
+  //   let  referral_fees= obj.referral_fees
+  //   let  fullfillment_fees= obj.fullfillment_fees
+  //   let  refund_commission= obj.refund_commission
+  //   let other_transaction_fee= obj.other_transaction_fee
+  //   let other= obj.other_adjustment
+  //   let  gross_profits= obj.gross_profits
+  //   let ads= obj.ads
+  //   let  storage_fee= obj.storage_fee
+  //   let  disposal_fee= obj.disposal_fee
+  //   let aged_inventory_surcharge= obj.aged_inventory_surcharge
+  //   let  gross_profits_overall= obj.gross_profits_overall
+  //   let j = i + 1;
+  //   while (j < rs.length) {
+  //     let otherObj = rs[j];
+  //     if (otherObj.sku === obj.fnsku) {
+  //       console.log(otherObj);
+  //       liquidations += otherObj.liquidations;
+  //       sale_quantity+= otherObj.sale_quantity;
+  //       refund_quantity += otherObj.refund_quantity;
+  //       product_sales_order += otherObj.product_sales;
+  //       product_sales_refund+= otherObj.refund_amount;
+  //       gross_sales += otherObj.gross_sales;
+  //       product_sales_tax += otherObj.product_sales_tax
+  //       shipping_credits += otherObj.shipping_credits
+  //       shipping_credit_tax+= otherObj.shipping_credit_tax
+  //       gift_wrap_credits+= otherObj.gift_wrap_credits
+  //       gift_wrap_credits_tax+= otherObj.gift_wrap_credits_tax
+  //       regulatory_fee+= otherObj.regulatory_fee
+  //       regulatory_fee_tax+= otherObj.regulatory_fee_tax
+  //       promotional_rebates+= otherObj.promotional_rebates
+  //       promotional_rebates_tax+= otherObj.promotional_rebates_tax
+  //       marketplace_withheld_tax += otherObj.marketplace_withheld_tax
+  //       referral_fees+= otherObj.referral_fees
+  //       fullfillment_fees+= otherObj.fullfillment_fees,
+  //       refund_commission+= otherObj.refund_commission,
+  //       other_transaction_fee+= otherObj.other_transaction_fee,
+  //       other+= otherObj.other_adjustment
+  //       gross_profits+= otherObj.gross_profits
+  //       ads+= otherObj.ads;
+  //       storage_fee += otherObj.storage_fee
+  //       disposal_fee += otherObj.disposal_fee
+  //       aged_inventory_surcharge+= otherObj.aged_inventory_surcharge
+  //       gross_profits_overall += otherObj.gross_profits_overall
+  //       rs.splice(j, 1);
+  //     } else {
+  //       j++;
+  //     }
+  //   }
+  //   if (liquidations > obj.liquidations) {
+  //     let newObj = { sku: obj.sku, fnsku: obj.fnsku,
+  //       sale_quantity: sale_quantity,
+  //       refund_quantity: refund_quantity,
+  //       product_sales :product_sales_order,
+  //       refund_amount : product_sales_refund,
+  //       liquidations: liquidations,
+  //       gross_sales: gross_sales,
+  //       product_sales_tax,
+  //       shipping_credits,
+  //       shipping_credit_tax,
+  //       gift_wrap_credits,
+  //       gift_wrap_credits_tax,
+  //       regulatory_fee,
+  //       regulatory_fee_tax,
+  //       promotional_rebates,
+  //       promotional_rebates_tax,
+  //       marketplace_withheld_tax,
+  //       referral_fees,
+  //       fullfillment_fees,
+  //       refund_commission,
+  //       other_transaction_fee,
+  //       other_adjustment: other,
+  //       gross_profits,
+  //       ads,
+  //       storage_fee,
+  //       disposal_fee,
+  //       aged_inventory_surcharge,
+  //       gross_profits_overall:gross_profits_overall};
+  //     rs.splice(i, 1, newObj);
+  //   }
+  //  // console.log(rs);
+  // }
+  // const newWorksheet = XLSX.utils.json_to_sheet(rs);
+  // XLSX.utils.book_append_sheet(workbook, newWorksheet, "File hoan thanh");
+  // XLSX.writeFile(workbook, 'data.xlsx');
 }
 
 GenerateFile()
