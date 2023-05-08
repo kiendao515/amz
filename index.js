@@ -1,6 +1,7 @@
 const XLSX = require('xlsx');
 
 const workbook = XLSX.readFile('P&L.xlsx');
+const wb2 = XLSX.readFile("Removal Order Detail.xlsx")
 
 class Payment {
   constructor(date, settlementID, type, orderID, group, sku, description, quantity, market_place, account_type, fullfillment, order_city, order_state, order_postal, tax_collection,
@@ -70,10 +71,15 @@ class StorageFee {
   }
 }
 class RemovalFee {
-  constructor(sku, order_type, removal_fee) {
+  constructor(sku, order_type, removal_fee, order_status, disposition, shipped_quantity,disposed_quantity) {
     this.sku = sku;
     this.order_type = order_type;
     this.removal_fee = removal_fee;
+    this.order_status = order_status;
+    this.disposition = disposition;
+    this.shipped_quantity = shipped_quantity;
+    this.disposed_quantity = disposed_quantity;
+
   }
 }
 class SurchargeFee {
@@ -82,13 +88,22 @@ class SurchargeFee {
     this.short_time_range_long_term_storage_fee = short_time_range_long_term_storage_fee
   }
 }
-class Adjustment{
-  constructor(date,fnsku,msku,quantity,disposition ) {
+class InventoryLedger{
+  constructor(date,fnsku,msku,quantity,disposition,event_type ) {
     this.date = date;
     this.fnsku= fnsku;
     this.msku = msku;
     this.quantity = quantity;
     this.disposition= disposition;
+    this.event_type = event_type;
+  }
+}
+class CustomerReturn{
+  constructor(sku,quantity,detailed_disposition,status ) {
+    this.sku = sku;
+    this.quantity = quantity;
+    this.detailed_disposition= detailed_disposition;
+    this.status = status;
   }
 }
 class Result {
@@ -96,7 +111,8 @@ class Result {
     product_sales_tax, shipping_credits, shipping_credit_tax, gift_wrap_credits, gift_wrap_credits_tax, regulatory_fee,
     regulatory_fee_tax, promotional_rebates, promotional_rebates_tax, marketplace_withheld_tax, referral_fees, fullfillment_fees, refund_commission, other_transaction_fee,
     other_adjustment, gross_profits, ads, storage_fee, disposal_fee, aged_inventory_surcharge, gross_profits_overall, mcf_quantity, lost_quantity_by_aw,
-    adjusted_quantity_by_aw) {
+    adjusted_quantity_by_aw,removal_liquidations, removal_return, removal_disposal, customer_return_sellable,
+    customer_return_unsellable,sellable_return_percent) {
     this.sku = sku;
     this.fnsku = fnsku;
     this.sale_quantity = sale_quantity;
@@ -128,11 +144,18 @@ class Result {
     this.gross_profits_overall = gross_profits_overall;
     this.mcf_quantity = mcf_quantity;
     this.lost_quantity_by_aw = lost_quantity_by_aw;
-    this.adjusted_quantity_by_aw = adjusted_quantity_by_aw
+    this.adjusted_quantity_by_aw = adjusted_quantity_by_aw;
+    this.removal_liquidations = removal_liquidations;
+    this.removal_return= removal_return;
+    this.removal_disposal = removal_disposal;
+    this.customer_return_sellable = customer_return_sellable;
+    this.customer_return_unsellable = customer_return_unsellable
+    this.sellable_return_percent = sellable_return_percent;
   }
 }
 
-function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, removalFee, surChargeFee, adjustment) {
+function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, removalFee, surChargeFee, adjustment,
+  customerReturn) {
   const skuData = {};
   paymentList.forEach(payment => {
     const { sku, type, quantity, product_sales, product_sales_tax, shipping_credits, shipping_credit_tax,
@@ -170,7 +193,13 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, re
         gross_profits_overall: 0,
         mcf_quantity: 0,
         lost_quantity_by_aw: 0,
-        adjusted_quantity_by_aw: 0
+        adjusted_quantity_by_aw: 0,
+        removal_liquidations:0,
+        removal_return:0, 
+        removal_disposal:0,
+        customer_return_sellable:0,
+        customer_return_unsellable:0,
+        sellable_return_percent:0 
       };
     }
     if (type === 'Order') {
@@ -229,10 +258,19 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, re
   });
 
   removalFee.forEach(r => {
-    const { sku, removal_fee, order_type } = r;
+    const { sku, removal_fee, order_type, order_status, disposition, shipped_quantity, disposed_quantity } = r;
     if (skuData[sku]) {
       if (order_type === 'Disposal' || order_type === 'Return') {
         skuData[sku].disposal_fee += removal_fee
+      }
+      if(order_status ==='Completed' && disposition ==='Sellable'){
+        if(order_type === 'Liquidations'){
+          skuData[sku].removal_liquidations += shipped_quantity
+        }
+        if(order_type === 'Return'){
+          skuData[sku].removal_return += shipped_quantity
+        }
+        skuData[sku].removal_disposal += disposed_quantity
       }
     }
   });
@@ -248,15 +286,80 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, re
       if(s.fnsku === v.fnsku){
         v.storage_fee += s.estimated_monthly_storage_fee;
       }
+      else {
+        costOfGods.forEach(skuInfo => {
+          const { sku, fnsku } = skuInfo;
+          if (s.fnsku === fnsku) {
+            if (!skuData[sku]) {
+              skuData[sku] = {
+                sku,
+                fnsku,
+                sale_quantity: 0,
+                refund_quantity: 0,
+                product_sales_order: 0,
+                product_sales_refund: 0,
+                liquidations: 0,
+                gross_sales: 0,
+                product_sales_tax: 0,
+                shipping_credits: 0,
+                shipping_credit_tax: 0,
+                gift_wrap_credits: 0,
+                gift_wrap_credits_tax: 0,
+                regulatory_fee: 0,
+                regulatory_fee_tax: 0,
+                promotional_rebates: 0,
+                promotional_rebates_tax: 0,
+                marketplace_withheld_tax: 0,
+                referral_fees: 0,
+                fullfillment_fees: 0,
+                refund_commission: 0,
+                other_transaction_fee: 0,
+                other: 0,
+                gross_profits: 0,
+                storage_fee: 0,
+                disposal_fee: 0,
+                aged_inventory_surcharge: 0,
+                gross_profits_overall: 0,
+                mcf_quantity: 0,
+                lost_quantity_by_aw: 0,
+                adjusted_quantity_by_aw: 0,
+                removal_liquidations:0,
+                removal_return:0, 
+                removal_disposal:0,
+                customer_return_sellable:0,
+                customer_return_unsellable:0,
+                sellable_return_percent:0 
+              };
+            } 
+          }
+        });
+      }
     });
   })
   adjustment.forEach(a => {
     Object.values(skuData).forEach(v => {
-      if(a.msku === v.sku){
+      if(a.msku === v.sku && a.event_type === "Adjustments" && a.quantity < 0 && new Date("03/01/2023") <=
+      new Date(a.date) && new Date(a.date)<= new Date("03/31/2023")){
         v.lost_quantity_by_aw += a.quantity;
+      }
+      if(a.msku === v.sku && a.event_type === "SELLABLE" && a.quantity > 0 && new Date("03/01/2023") <=
+      new Date(a.date) && new Date(a.date)<= new Date("03/31/2023")){
+        v.adjusted_quantity_by_aw += a.quantity;
       }
     });
   });
+
+  customerReturn.forEach(c=>{
+    Object.values(skuData).forEach(v => {
+      if(c.sku === v.sku){
+        if(c.detailed_disposition === 'SELLABLE' && c.status === "Unit returned to inventory"){
+          v.customer_return_sellable += c.quantity;
+        }else{
+          v.customer_return_unsellable += c.quantity;
+        }
+      }
+    });
+  })
   
   return Object.values(skuData).map(sku => new Result(
     sku.sku,
@@ -290,7 +393,14 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, re
     sku.gross_profits + sku.aged_inventory_surcharge,
     sku.mcf_quantity,
     sku.lost_quantity_by_aw,
-    sku.adjusted_quantity_by_aw
+    sku.adjusted_quantity_by_aw,
+    sku.removal_liquidations,
+    sku.removal_return,
+    sku.removal_disposal,
+    sku.customer_return_sellable,
+    sku.customer_return_unsellable,
+    (sku.customer_return_sellable+ sku.customer_return_unsellable) !=0 ? 
+    sku.customer_return_sellable / (sku.customer_return_sellable+ sku.customer_return_unsellable) * 100 +"%" : "0%"
   ));
 }
 function GenerateFile() {
@@ -302,6 +412,7 @@ function GenerateFile() {
   const ws6 = workbook.Sheets["Removal Fee T3"]
   const ws7 = workbook.Sheets["Surcharge Fee T3"]
   const ws8 = workbook.Sheets["Adjustments T3"]
+  const ws9 = workbook.Sheets["Customer Return T3"]
 
   // Use XLSX.utils.sheet_to_json() to convert the worksheet to a JSON array
   const jsonArray = XLSX.utils.sheet_to_json(worksheet);
@@ -385,7 +496,11 @@ function GenerateFile() {
     return new RemovalFee(
       row['sku'],
       row['order-type'],
-      row['removal-fee']
+      row['removal-fee'],
+      row['order-type'],
+      row['disposition'],
+      row['shipped_quantity'],
+      row['disposed-quantity']
     )
   })
 
@@ -399,16 +514,28 @@ function GenerateFile() {
 
   const arr8 = XLSX.utils.sheet_to_json(ws8)
   let adjustment = arr8.map((row) => {
-    return new Adjustment(
+    return new InventoryLedger(
       row['Date'],
       row['FNSKU'],
       row['MSKU'],
       row['Quantity'],
-      row['Disposition']
+      row['Disposition'],
+      row['Event Type']
     )
   })
 
-  let rs = getSKUData(payments, costOfGods, adsPortfolio, adsT3, storageFee, removalFee, surChargeFee, adjustment);
+  const arr9 = XLSX.utils.sheet_to_json(ws9);
+  let customerReturn = arr9.map((row)=>{
+    return new CustomerReturn(
+      row['sku'],
+      row['quantity'],
+      row['detailed-disposition'],
+      row['status']
+    )
+  })
+
+  let rs = getSKUData(payments, costOfGods, adsPortfolio, adsT3, storageFee, removalFee, surChargeFee, adjustment,
+    customerReturn);
   console.log(rs);
   // for (let i = 0; i < rs.length; i++) {
   //   let obj = rs[i];
@@ -509,9 +636,9 @@ function GenerateFile() {
   //   }
   //  // console.log(rs);
   // }
-  // const newWorksheet = XLSX.utils.json_to_sheet(rs);
-  // XLSX.utils.book_append_sheet(workbook, newWorksheet, "File hoan thanh");
-  // XLSX.writeFile(workbook, 'data.xlsx');
+  const newWorksheet = XLSX.utils.json_to_sheet(rs);
+  XLSX.utils.book_append_sheet(workbook, newWorksheet, "File hoan thanh");
+  XLSX.writeFile(workbook, 'data.xlsx');
 }
 
 GenerateFile()
