@@ -1,7 +1,8 @@
 const XLSX = require('xlsx');
 
 const workbook = XLSX.readFile('P&L.xlsx');
-const wb2 = XLSX.readFile("Removal Order Detail.xlsx")
+const rm = XLSX.readFile("Removal Order Detail.xlsx")
+const il = XLSX.readFile("Inventory Ledger.xlsx")
 
 class Payment {
   constructor(date, settlementID, type, orderID, group, sku, description, quantity, market_place, account_type, fullfillment, order_city, order_state, order_postal, tax_collection,
@@ -99,11 +100,15 @@ class InventoryLedger{
   }
 }
 class CustomerReturn{
-  constructor(sku,quantity,detailed_disposition,status ) {
+  constructor(date,sku,quantity,dispotition,order_type,order_status,shipped_quantity, disposed_quantity ) {
+    this.date = date;
     this.sku = sku;
     this.quantity = quantity;
-    this.detailed_disposition= detailed_disposition;
-    this.status = status;
+    this.disposition=dispotition;
+    this.order_type = order_type
+    this.order_status = order_status;
+    this.shipped_quantity = shipped_quantity;
+    this.disposed_quantity = disposed_quantity;
   }
 }
 class Result {
@@ -258,19 +263,10 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, re
   });
 
   removalFee.forEach(r => {
-    const { sku, removal_fee, order_type, order_status, disposition, shipped_quantity, disposed_quantity } = r;
+    const { sku, removal_fee, order_type } = r;
     if (skuData[sku]) {
       if (order_type === 'Disposal' || order_type === 'Return') {
         skuData[sku].disposal_fee += removal_fee
-      }
-      if(order_status ==='Completed' && disposition ==='Sellable'){
-        if(order_type === 'Liquidations'){
-          skuData[sku].removal_liquidations += shipped_quantity
-        }
-        if(order_type === 'Return'){
-          skuData[sku].removal_return += shipped_quantity
-        }
-        skuData[sku].removal_disposal += disposed_quantity
       }
     }
   });
@@ -282,57 +278,55 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, re
     }
   });
   storageFee.forEach(s=>{
+    costOfGods.forEach(skuInfo => {
+      const { sku, fnsku } = skuInfo;
+      if (s.fnsku === fnsku) {
+        if (!skuData[sku]) {
+          skuData[sku] = {
+            sku,
+            fnsku,
+            sale_quantity: 0,
+            refund_quantity: 0,
+            product_sales_order: 0,
+            product_sales_refund: 0,
+            liquidations: 0,
+            gross_sales: 0,
+            product_sales_tax: 0,
+            shipping_credits: 0,
+            shipping_credit_tax: 0,
+            gift_wrap_credits: 0,
+            gift_wrap_credits_tax: 0,
+            regulatory_fee: 0,
+            regulatory_fee_tax: 0,
+            promotional_rebates: 0,
+            promotional_rebates_tax: 0,
+            marketplace_withheld_tax: 0,
+            referral_fees: 0,
+            fullfillment_fees: 0,
+            refund_commission: 0,
+            other_transaction_fee: 0,
+            other: 0,
+            gross_profits: 0,
+            storage_fee: 0,
+            disposal_fee: 0,
+            aged_inventory_surcharge: 0,
+            gross_profits_overall: 0,
+            mcf_quantity: 0,
+            lost_quantity_by_aw: 0,
+            adjusted_quantity_by_aw: 0,
+            removal_liquidations:0,
+            removal_return:0, 
+            removal_disposal:0,
+            customer_return_sellable:0,
+            customer_return_unsellable:0,
+            sellable_return_percent:0 
+          };
+        } 
+      }
+    });
     Object.values(skuData).forEach(v => {
       if(s.fnsku === v.fnsku){
         v.storage_fee += s.estimated_monthly_storage_fee;
-      }
-      else {
-        costOfGods.forEach(skuInfo => {
-          const { sku, fnsku } = skuInfo;
-          if (s.fnsku === fnsku) {
-            if (!skuData[sku]) {
-              skuData[sku] = {
-                sku,
-                fnsku,
-                sale_quantity: 0,
-                refund_quantity: 0,
-                product_sales_order: 0,
-                product_sales_refund: 0,
-                liquidations: 0,
-                gross_sales: 0,
-                product_sales_tax: 0,
-                shipping_credits: 0,
-                shipping_credit_tax: 0,
-                gift_wrap_credits: 0,
-                gift_wrap_credits_tax: 0,
-                regulatory_fee: 0,
-                regulatory_fee_tax: 0,
-                promotional_rebates: 0,
-                promotional_rebates_tax: 0,
-                marketplace_withheld_tax: 0,
-                referral_fees: 0,
-                fullfillment_fees: 0,
-                refund_commission: 0,
-                other_transaction_fee: 0,
-                other: 0,
-                gross_profits: 0,
-                storage_fee: 0,
-                disposal_fee: 0,
-                aged_inventory_surcharge: 0,
-                gross_profits_overall: 0,
-                mcf_quantity: 0,
-                lost_quantity_by_aw: 0,
-                adjusted_quantity_by_aw: 0,
-                removal_liquidations:0,
-                removal_return:0, 
-                removal_disposal:0,
-                customer_return_sellable:0,
-                customer_return_unsellable:0,
-                sellable_return_percent:0 
-              };
-            } 
-          }
-        });
       }
     });
   })
@@ -340,6 +334,7 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, re
     Object.values(skuData).forEach(v => {
       if(a.msku === v.sku && a.event_type === "Adjustments" && a.quantity < 0 && new Date("03/01/2023") <=
       new Date(a.date) && new Date(a.date)<= new Date("03/31/2023")){
+
         v.lost_quantity_by_aw += a.quantity;
       }
       if(a.msku === v.sku && a.event_type === "SELLABLE" && a.quantity > 0 && new Date("03/01/2023") <=
@@ -350,12 +345,19 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, re
   });
 
   customerReturn.forEach(c=>{
+    const {order_status, disposition, shipped_quantity, disposed_quantity,sku,order_type,date} = c;
+    console.log("ccccc"+order_status);
     Object.values(skuData).forEach(v => {
       if(c.sku === v.sku){
-        if(c.detailed_disposition === 'SELLABLE' && c.status === "Unit returned to inventory"){
-          v.customer_return_sellable += c.quantity;
-        }else{
-          v.customer_return_unsellable += c.quantity;
+        if(order_status ==='Completed' && disposition ==='Sellable' &&  new Date("03/01/2023") <=
+        new Date(date) && new Date(date)<= new Date("03/31/2023")){
+          if(order_type === 'Liquidations'){
+            skuData[sku].removal_liquidations += shipped_quantity
+          }
+          if(order_type === 'Return'){
+            skuData[sku].removal_return += shipped_quantity
+          }
+          skuData[sku].removal_disposal += disposed_quantity
         }
       }
     });
@@ -411,8 +413,8 @@ function GenerateFile() {
   const ws5 = workbook.Sheets["Storage Fee T3"]
   const ws6 = workbook.Sheets["Removal Fee T3"]
   const ws7 = workbook.Sheets["Surcharge Fee T3"]
-  const ws8 = workbook.Sheets["Adjustments T3"]
-  const ws9 = workbook.Sheets["Customer Return T3"]
+  const ws8 = rm.Sheets["237848019483"]
+  const ws9 = il.Sheets["237273019481"]
 
   // Use XLSX.utils.sheet_to_json() to convert the worksheet to a JSON array
   const jsonArray = XLSX.utils.sheet_to_json(worksheet);
@@ -512,7 +514,7 @@ function GenerateFile() {
     )
   })
 
-  const arr8 = XLSX.utils.sheet_to_json(ws8)
+  const arr8 = XLSX.utils.sheet_to_json(ws9)
   let adjustment = arr8.map((row) => {
     return new InventoryLedger(
       row['Date'],
@@ -524,15 +526,20 @@ function GenerateFile() {
     )
   })
 
-  const arr9 = XLSX.utils.sheet_to_json(ws9);
+  const arr9 = XLSX.utils.sheet_to_json(ws8);
   let customerReturn = arr9.map((row)=>{
     return new CustomerReturn(
+      row['date'],
       row['sku'],
       row['quantity'],
-      row['detailed-disposition'],
-      row['status']
+      row['disposition'],
+      row['order-type'],
+      row['order-status'],
+      row['shipped-quantity'],
+      row['disposed-quantity']
     )
   })
+  console.log(customerReturn);
 
   let rs = getSKUData(payments, costOfGods, adsPortfolio, adsT3, storageFee, removalFee, surChargeFee, adjustment,
     customerReturn);
