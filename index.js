@@ -1,8 +1,10 @@
+const moment = require('moment/moment');
 const XLSX = require('xlsx');
 
 const workbook = XLSX.readFile('P&L.xlsx');
 const rm = XLSX.readFile("Removal Order Detail.xlsx")
 const il = XLSX.readFile("Inventory Ledger.xlsx")
+const { getJsDateFromExcel } = require("excel-date-to-js");
 
 class Payment {
   constructor(date, settlementID, type, orderID, group, sku, description, quantity, market_place, account_type, fullfillment, order_city, order_state, order_postal, tax_collection,
@@ -72,7 +74,7 @@ class StorageFee {
   }
 }
 class RemovalFee {
-  constructor(sku, order_type, removal_fee, order_status, disposition, shipped_quantity,disposed_quantity) {
+  constructor(sku, order_type, removal_fee, order_status, disposition, shipped_quantity, disposed_quantity) {
     this.sku = sku;
     this.order_type = order_type;
     this.removal_fee = removal_fee;
@@ -84,28 +86,28 @@ class RemovalFee {
   }
 }
 class SurchargeFee {
-  constructor(sku,fnsku, short_time_range_long_term_storage_fee) {
+  constructor(sku, fnsku, short_time_range_long_term_storage_fee) {
     this.sku = sku;
     this.fnsku = fnsku;
     this.short_time_range_long_term_storage_fee = short_time_range_long_term_storage_fee
   }
 }
-class InventoryLedger{
-  constructor(date,fnsku,msku,quantity,disposition,event_type ) {
+class InventoryLedger {
+  constructor(date, fnsku, msku, quantity, disposition, event_type) {
     this.date = date;
-    this.fnsku= fnsku;
+    this.fnsku = fnsku;
     this.msku = msku;
     this.quantity = quantity;
-    this.disposition= disposition;
+    this.disposition = disposition;
     this.event_type = event_type;
   }
 }
-class CustomerReturn{
-  constructor(date,sku,quantity,dispotition,order_type,order_status,shipped_quantity, disposed_quantity,removal_fee ) {
+class CustomerReturn {
+  constructor(date, sku, fnsku, dispotition, order_type, order_status, shipped_quantity, disposed_quantity, removal_fee) {
     this.date = date;
     this.sku = sku;
-    this.quantity = quantity;
-    this.disposition=dispotition;
+    this.fnsku = fnsku;
+    this.disposition = dispotition;
     this.order_type = order_type
     this.order_status = order_status;
     this.shipped_quantity = shipped_quantity;
@@ -118,8 +120,8 @@ class Result {
     product_sales_tax, shipping_credits, shipping_credit_tax, gift_wrap_credits, gift_wrap_credits_tax, regulatory_fee,
     regulatory_fee_tax, promotional_rebates, promotional_rebates_tax, marketplace_withheld_tax, referral_fees, fullfillment_fees, refund_commission, other_transaction_fee,
     other_adjustment, gross_profits, ads, storage_fee, disposal_fee, aged_inventory_surcharge, gross_profits_overall, mcf_quantity, lost_quantity_by_aw,
-    adjusted_quantity_by_aw,removal_liquidations, removal_return, removal_disposal, customer_return_sellable,
-    customer_return_unsellable,sellable_return_percent) {
+    adjusted_quantity_by_aw, removal_liquidations, removal_return, removal_disposal, customer_return_sellable,
+    customer_return_unsellable, sellable_return_percent) {
     this.sku = sku;
     this.fnsku = fnsku;
     this.sale_quantity = sale_quantity;
@@ -153,7 +155,7 @@ class Result {
     this.lost_quantity_by_aw = lost_quantity_by_aw;
     this.adjusted_quantity_by_aw = adjusted_quantity_by_aw;
     this.removal_liquidations = removal_liquidations;
-    this.removal_return= removal_return;
+    this.removal_return = removal_return;
     this.removal_disposal = removal_disposal;
     this.customer_return_sellable = customer_return_sellable;
     this.customer_return_unsellable = customer_return_unsellable
@@ -201,12 +203,12 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
         mcf_quantity: 0,
         lost_quantity_by_aw: 0,
         adjusted_quantity_by_aw: 0,
-        removal_liquidations:0,
-        removal_return:0, 
-        removal_disposal:0,
-        customer_return_sellable:0,
-        customer_return_unsellable:0,
-        sellable_return_percent:0 
+        removal_liquidations: 0,
+        removal_return: 0,
+        removal_disposal: 0,
+        customer_return_sellable: 0,
+        customer_return_unsellable: 0,
+        sellable_return_percent: 0
       };
     }
     if (type === 'Order') {
@@ -225,11 +227,8 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
       skuData[sku].liquidations += product_sales;
       skuData[sku].gross_sales += product_sales
     }
-    if(market_place?.slice(0, 3) === "sim" || market_place?.slice(1, 4) === "sim"){
+    if (market_place?.slice(0, 3) === "sim" || market_place?.slice(1, 4) === "sim") {
       skuData[sku].mcf_quantity += quantity
-    }
-    if(description === 'FBA Inventory Reimbursement - General Adjustment'){
-      skuData[sku].adjusted_quantity_by_aw += quantity;
     }
     skuData[sku].product_sales_tax += product_sales_tax;
     skuData[sku].shipping_credits += shipping_credits;
@@ -258,7 +257,7 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
     if (skuData[sku]) {
       adsT3.forEach(ad => {
         if (ad.portfolio === portfolio) {
-          skuData[sku].ads = parseFloat(ad.spend).toFixed(3) 
+          skuData[sku].ads = parseFloat(ad.spend).toFixed(3)
         }
       });
     }
@@ -310,18 +309,18 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
             mcf_quantity: 0,
             lost_quantity_by_aw: 0,
             adjusted_quantity_by_aw: 0,
-            removal_liquidations:0,
-            removal_return:0, 
-            removal_disposal:0,
-            customer_return_sellable:0,
-            customer_return_unsellable:0,
-            sellable_return_percent:0 
+            removal_liquidations: 0,
+            removal_return: 0,
+            removal_disposal: 0,
+            customer_return_sellable: 0,
+            customer_return_unsellable: 0,
+            sellable_return_percent: 0
           };
-        } 
+        }
       }
     });
     Object.values(skuData).forEach(v => {
-      if(s.fnsku === v.fnsku){
+      if (s.fnsku === v.fnsku) {
         console.log("surcharge fee", s);
         v.aged_inventory_surcharge += s.short_time_range_long_term_storage_fee;
       }
@@ -332,7 +331,7 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
     //   skuData[sku].aged_inventory_surcharge += short_time_range_long_term_storage_fee;
     // }
   });
-  storageFee.forEach(s=>{
+  storageFee.forEach(s => {
     costOfGods.forEach(skuInfo => {
       const { sku, fnsku } = skuInfo;
       if (s.fnsku === fnsku) {
@@ -369,68 +368,171 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
             mcf_quantity: 0,
             lost_quantity_by_aw: 0,
             adjusted_quantity_by_aw: 0,
-            removal_liquidations:0,
-            removal_return:0, 
-            removal_disposal:0,
-            customer_return_sellable:0,
-            customer_return_unsellable:0,
-            sellable_return_percent:0 
+            removal_liquidations: 0,
+            removal_return: 0,
+            removal_disposal: 0,
+            customer_return_sellable: 0,
+            customer_return_unsellable: 0,
+            sellable_return_percent: 0
           };
-        } 
+        }
       }
     });
     Object.values(skuData).forEach(v => {
-      if(s.fnsku === v.fnsku){
+      if (s.fnsku === v.fnsku) {
         v.storage_fee += s.estimated_monthly_storage_fee;
       }
     });
   })
+  function parseDate(input) {
+    if (input.length > 7) { // input is likely in MM/DD/YYYY format
+      return new Date(input);
+    } else { // input is likely a serial date
+      const serialDate = parseInt(input);
+      if (!isNaN(serialDate)) {
+        const date = new Date((serialDate - 25569) * 86400 * 1000);
+        date.setUTCHours(0, 0, 0, 0);
+        return date;
+      }
+    }
+    return null; // input format not recognized
+  }
   adjustment.forEach(a => {
+    var startDate = parseDate("03/01/2023")
+    var endDate = parseDate("03/31/2023")
+    var aDate = a.date.length >7 ? parseDate(a.date) : parseDate(getJsDateFromExcel(a.date).getDate()+"/"+Number(getJsDateFromExcel(a.date).getMonth()+1)+"/"+getJsDateFromExcel(a.date).getFullYear())
+    costOfGods.forEach(skuInfo => {
+      const { sku, fnsku } = skuInfo;
+      if (a.fnsku === fnsku) {
+        if (!skuData[sku]) {
+          skuData[sku] = {
+            sku,
+            fnsku,
+            sale_quantity: 0,
+            refund_quantity: 0,
+            product_sales_order: 0,
+            product_sales_refund: 0,
+            liquidations: 0,
+            gross_sales: 0,
+            product_sales_tax: 0,
+            shipping_credits: 0,
+            shipping_credit_tax: 0,
+            gift_wrap_credits: 0,
+            gift_wrap_credits_tax: 0,
+            regulatory_fee: 0,
+            regulatory_fee_tax: 0,
+            promotional_rebates: 0,
+            promotional_rebates_tax: 0,
+            marketplace_withheld_tax: 0,
+            referral_fees: 0,
+            fullfillment_fees: 0,
+            refund_commission: 0,
+            other_transaction_fee: 0,
+            other: 0,
+            gross_profits: 0,
+            storage_fee: 0,
+            disposal_fee: 0,
+            aged_inventory_surcharge: 0,
+            gross_profits_overall: 0,
+            mcf_quantity: 0,
+            lost_quantity_by_aw: 0,
+            adjusted_quantity_by_aw: 0,
+            removal_liquidations: 0,
+            removal_return: 0,
+            removal_disposal: 0,
+            customer_return_sellable: 0,
+            customer_return_unsellable: 0,
+            sellable_return_percent: 0
+          };
+        }
+      }
+    })
     Object.values(skuData).forEach(v => {
-      if(a.msku === v.sku && a.event_type === "Adjustments" && a.quantity < 0 && new Date("03/01/2023") <=
-      new Date(a.date) && new Date(a.date)<= new Date("03/31/2023")){
-        console.log("lost quantity by aw " ,a.quantity, a.msku);
-        v.lost_quantity_by_aw += a.quantity;
-      }
-      if(a.msku === v.sku && a.event_type === "SELLABLE" && a.quantity > 0 && new Date("03/01/2023") <=
-      new Date(a.date) && new Date(a.date)<= new Date("03/31/2023")){
-        console.log("adjusted quantity" ,a.quantity, a.msku);
-        v.adjusted_quantity_by_aw += a.quantity;
-      }
-      if(a.msku === v.sku && a.event_type=== 'CustomerReturns' && a.disposition === 'SELLABLE' && new Date("03/01/2023") <=
-      new Date(a.date) && new Date(a.date)<= new Date("03/31/2023")){
-        console.log("customer return sellable " ,a.quantity, a.msku);
-        v.customer_return_sellable += a.quantity;
-      }
-      if(a.msku === v.sku && a.event_type=== 'CustomerReturns' && a.disposition !== 'SELLABLE' && new Date("03/01/2023") <=
-      new Date(a.date) && new Date(a.date)<= new Date("03/31/2023")){
-        console.log("customer return unsellable " ,a.quantity, a.msku);
-        v.customer_return_unsellable += a.quantity;
+      if (startDate <=
+        aDate && aDate <= endDate) {
+        if (a.msku === v.sku && a.event_type === "Adjustments" && a.quantity < 0 && a.disposition === "SELLABLE") {
+          v.lost_quantity_by_aw += a.quantity;
+        }
+        if (a.msku === v.sku && a.event_type === "Adjustments" && a.quantity > 0 && a.disposition === "SELLABLE") {
+          v.adjusted_quantity_by_aw += a.quantity;
+        }
+        if (a.msku === v.sku && a.event_type === "CustomerReturns") {
+          if(a.disposition === "SELLABLE"){
+            v.customer_return_sellable += a.quantity;
+          }else{
+            v.customer_return_unsellable += a.quantity;
+          }
+        }
       }
     });
   });
-
-  customerReturn.forEach(c=>{
-    const {order_status, disposition, shipped_quantity, disposed_quantity,sku,order_type,date,removal_fee} = c;
+  console.log(customerReturn);
+  customerReturn.forEach(c => {
+    var startDate = parseDate("10/01/2022")
+    var endDate = parseDate("11/01/2022")
+    var aDate = c.date.length >7 ? parseDate(c.date.substring(0, 10)) : parseDate(getJsDateFromExcel(c.date).getDate()+"/"+Number(getJsDateFromExcel(c.date).getMonth()+1)+"/"+getJsDateFromExcel(c.date).getFullYear())
+    costOfGods.forEach(skuInfo => {
+      const { sku, fnsku } = skuInfo;
+        if (!skuData[sku]) {
+          skuData[sku] = {
+            sku,
+            fnsku,
+            sale_quantity: 0,
+            refund_quantity: 0,
+            product_sales_order: 0,
+            product_sales_refund: 0,
+            liquidations: 0,
+            gross_sales: 0,
+            product_sales_tax: 0,
+            shipping_credits: 0,
+            shipping_credit_tax: 0,
+            gift_wrap_credits: 0,
+            gift_wrap_credits_tax: 0,
+            regulatory_fee: 0,
+            regulatory_fee_tax: 0,
+            promotional_rebates: 0,
+            promotional_rebates_tax: 0,
+            marketplace_withheld_tax: 0,
+            referral_fees: 0,
+            fullfillment_fees: 0,
+            refund_commission: 0,
+            other_transaction_fee: 0,
+            other: 0,
+            gross_profits: 0,
+            storage_fee: 0,
+            disposal_fee: 0,
+            aged_inventory_surcharge: 0,
+            gross_profits_overall: 0,
+            mcf_quantity: 0,
+            lost_quantity_by_aw: 0,
+            adjusted_quantity_by_aw: 0,
+            removal_liquidations: 0,
+            removal_return: 0,
+            removal_disposal: 0,
+            customer_return_sellable: 0,
+            customer_return_unsellable: 0,
+            sellable_return_percent: 0
+          };
+        }
+    })
+    const { order_status, disposition, shipped_quantity, disposed_quantity, sku, order_type, date, removal_fee } = c;
     Object.values(skuData).forEach(v => {
-      if(c.sku === v.sku){
-        if(order_status ==='Completed' && disposition ==='Sellable' &&  new Date("03/01/2023") <=
-        new Date(date) && new Date(date)<= new Date("03/31/2023")){
-          if(order_type === 'Liquidations'){
+      if (sku === v.sku && startDate <= aDate && aDate <= endDate) {
+        if (order_status === 'Completed' && disposition === 'Sellable') {
+          if (order_type === 'Liquidations') {
             v.removal_liquidations += shipped_quantity
           }
-          if(order_type === 'Return'){
+          if (order_type === 'Return') {
+            console.log("return ne", c);
             v.removal_return += shipped_quantity
           }
-          v.removal_disposal += disposed_quantity
+          v.removal_disposal += disposed_quantity != undefined ? disposed_quantity :0
         }
-        if(order_type==='Disposal' || order_type === 'Return'){
-          v.disposal_fee += removal_fee;
-        }
+        v.disposal_fee += removal_fee != undefined ? removal_fee : 0;
       }
     });
   })
-  
+
   return Object.values(skuData).map(sku => new Result(
     sku.sku,
     sku.fnsku,
@@ -456,7 +558,7 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
     sku.other_transaction_fee,
     sku.other,
     sku.gross_profits,
-    sku.ads ? Number(sku.ads): null,
+    sku.ads ? Number(sku.ads) : null,
     sku.storage_fee,
     sku.disposal_fee,
     sku.aged_inventory_surcharge,
@@ -469,8 +571,8 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
     sku.removal_disposal,
     sku.customer_return_sellable,
     sku.customer_return_unsellable,
-    (sku.customer_return_sellable+ sku.customer_return_unsellable) !=0 ? 
-    sku.customer_return_sellable / (sku.customer_return_sellable+ sku.customer_return_unsellable) * 100 +"%" : "0%"
+    (sku.customer_return_sellable + sku.customer_return_unsellable) != 0 ?
+      sku.customer_return_sellable / (sku.customer_return_sellable + sku.customer_return_unsellable) * 100 + "%" : "0%"
   ));
 }
 function GenerateFile() {
@@ -481,8 +583,8 @@ function GenerateFile() {
   const ws5 = workbook.Sheets["Storage Fee T3"]
   const ws6 = workbook.Sheets["Removal Fee T3"]
   const ws7 = workbook.Sheets["Surcharge Fee T3"]
-  const ws8 = rm.Sheets["237848019483"]
-  const ws9 = il.Sheets["237273019481"]
+  const ws8 = rm.Sheets["Thành"]
+  const ws9 = il.Sheets["Thành"]
 
   // Use XLSX.utils.sheet_to_json() to convert the worksheet to a JSON array
   const jsonArray = XLSX.utils.sheet_to_json(worksheet);
@@ -596,11 +698,11 @@ function GenerateFile() {
   })
 
   const arr9 = XLSX.utils.sheet_to_json(ws8);
-  let customerReturn = arr9.map((row)=>{
+  let customerReturn = arr9.map((row) => {
     return new CustomerReturn(
-      row['date'],
+      row['request-date'],
       row['sku'],
-      row['quantity'],
+      row['fnsku'],
       row['disposition'],
       row['order-type'],
       row['order-status'],
@@ -609,12 +711,10 @@ function GenerateFile() {
       row['removal-fee']
     )
   })
-  console.log(customerReturn);
 
   let rs = getSKUData(payments, costOfGods, adsPortfolio, adsT3, storageFee, surChargeFee, adjustment,
     customerReturn);
-  console.log(rs);
-  console.log(rs.length);
+  // console.log(rs);
   // for (let i = 0; i < rs.length; i++) {
   //   let obj = rs[i];
   //   let sale_quantity = obj.sale_quantity;
