@@ -2,7 +2,7 @@ const XLSX = require('xlsx');
 
 const workbook = XLSX.readFile('Payment 12.07.22 - 05.05.23 (Thành).xlsx');
 const rm = XLSX.readFile("Removal Order Detail 01.01.22 - 06.05.23.xlsx")
-const il = XLSX.readFile("Inventory Ledger 12.07.22 - 05.05.23.xlsx")
+const il = XLSX.readFile("Inventory Ledger 18.05.22 - 18.05.23.xlsx")
 const wb_inventory = XLSX.readFile("Inventory 06.05.xlsx")
 const { getJsDateFromExcel } = require("excel-date-to-js");
 
@@ -67,7 +67,7 @@ class Inventory {
 }
 
 class Result {
-    constructor(date, sku, fnsku, shipmentID, sale_quantity, total_inventory,data) {
+    constructor(date, sku, fnsku, shipmentID, sale_quantity, total_inventory, data) {
         this.date = date;
         this.sku = sku;
         this.fnsku = fnsku;
@@ -101,8 +101,8 @@ class Transaction {
     }
 }
 
-class CostOfGood{
-    constructor(sku,fnsku,from_date,to_date, cogs){
+class CostOfGood {
+    constructor(sku, fnsku, from_date, to_date, cogs) {
         this.sku = sku;
         this.fnsku = fnsku;
         this.from_date = from_date;
@@ -112,25 +112,29 @@ class CostOfGood{
 }
 
 function getSKUData(paymentList, inventoryLedger, inventory) {
-    const skuData = {};
+    const inventoryLedgerList = [];
+    const listReference = []
+    let referenceIDTotals = {};
+    let currentTotal = 0;
+    let result = [];
+    let skuData = {}
     inventoryLedger.forEach(element => {
         const { date, fnsku, msku, quantity, disposition, event_type, referenceID } = element;
-        if (!skuData[msku] && event_type === 'Receipts' && referenceID != undefined) {
-            skuData[msku] = {
+        if (event_type === 'Receipts' && referenceID != undefined) {
+            inventoryLedgerList.push({
                 date, msku, fnsku,
                 shipmentID: referenceID,
-                sale_quantity: 0,
-                mcf_quantity: 0,
-                total_inventory: 0
+                quantity: quantity
+            })
+            if (!skuData[msku]) {
+                skuData[msku] = {
+                    date, msku, fnsku,
+                    shipmentID: referenceID,
+                    sale_quantity: 0,
+                    total_inventory: 0
+                }
             }
         }
-    });
-    Object.values(skuData).forEach(v => {
-        inventoryLedger.forEach((i) => {
-            if (v.msku === i.msku && v.shipmentID === i.referenceID) {
-                v.sale_quantity += i.quantity
-            }
-        })
     });
     Object.values(skuData).forEach(v => {
         inventory.forEach((i) => {
@@ -141,6 +145,45 @@ function getSKUData(paymentList, inventoryLedger, inventory) {
         })
     });
 
+    Object.values(skuData).forEach(v => {
+        const filteredData = inventoryLedgerList.filter(element => v.msku === element.msku);
+        const referenceIDTotals = [];
+
+        filteredData.forEach(inventory => {
+            const referenceID = inventory.shipmentID;
+
+            if (!referenceIDTotals.includes(referenceID)) {
+                const filtered = inventoryLedger.filter(obj => obj.shipmentID === referenceID);
+                referenceIDTotals.push(referenceID);
+            }
+        });
+        v.shipmentID = referenceIDTotals;
+    });
+    Object.values(skuData).forEach(sku => {
+        let tmp = []
+        sku.shipmentID.forEach(shipmentID => {
+            const filteredInventory = inventoryLedgerList.filter(item => item.shipmentID === shipmentID && sku.msku === item.msku);
+            const saleQuantity = filteredInventory.reduce((total, item) => total + item.quantity, 0);
+            tmp.push(saleQuantity)
+        });
+        sku.sale_quantity = tmp;
+    });
+    Object.values(skuData).forEach(sku => {
+        let count =0;
+        let total =0;
+        for (let i = 0; i < sku.shipmentID.length; i++) {
+            total += sku.sale_quantity[i];
+            count = count +1;;
+            if(total >= sku.total_inventory){
+                sku.sale_quantity = total;
+                sku.shipmentID = sku.shipmentID[i] 
+            }else if(total < sku.total_inventory && count === sku.shipmentID.length){
+                sku.sale_quantity = total;
+                sku.shipmentID = sku.shipmentID[i] 
+            }
+        }
+    });
+    console.log(skuData);
     return Object.values(skuData).map(sku => new Result(
         sku.date,
         sku.msku,
@@ -167,59 +210,58 @@ function parseDate(input) {
 function getListTransaction(inventoryLedger, removeArr) {
     const transactions = [];
     inventoryLedger.forEach(element => {
-      const { date, fnsku, msku, quantity, disposition, event_type } = element;
-      if (disposition === 'SELLABLE' && (event_type === 'Shipments' || event_type === 'CustomerReturns' ||
-        event_type === 'Adjustments')) {
-        transactions.push({
-          date: parseDate(date), 
-          sku: msku, 
-          fnsku,
-          type: event_type,
-          quantity: quantity,
-          disposition: disposition
-        });
-      }
+        const { date, fnsku, msku, quantity, disposition, event_type } = element;
+        if (disposition === 'SELLABLE' && (event_type === 'Shipments' || event_type === 'CustomerReturns' ||
+            event_type === 'Adjustments')) {
+            transactions.push({
+                date: parseDate(date),
+                sku: msku,
+                fnsku,
+                type: event_type,
+                quantity: quantity,
+                disposition: disposition
+            });
+        }
     });
-  
+
     removeArr.forEach(c => {
-      var endDate = parseDate("05/05/2023");
-      var aDate = c.date.length > 7 ? parseDate(c.date.substring(0, 10)) : parseDate(getJsDateFromExcel(c.date).getDate() + "/" + Number(getJsDateFromExcel(c.date).getMonth() + 1) + "/" + getJsDateFromExcel(c.date).getFullYear());
-      const { date, sku, fnsku, disposition, order_type, order_status, shipped_quantity, disposed_quantity, removal_fee } = c;
-      console.log(aDate, endDate);
-      if (order_status === 'Completed' && disposition === 'Sellable') {
-        if (disposed_quantity !== undefined && disposed_quantity !==0 && order_type === 'Disposal') {
-          transactions.push({
-            date: parseDate(date), 
-            sku, fnsku,
-            type: order_type,
-            quantity: disposed_quantity,
-            disposition: disposition
-          });
+        var endDate = parseDate("05/05/2023");
+        var aDate = c.date.length > 7 ? parseDate(c.date.substring(0, 10)) : parseDate(getJsDateFromExcel(c.date).getDate() + "/" + Number(getJsDateFromExcel(c.date).getMonth() + 1) + "/" + getJsDateFromExcel(c.date).getFullYear());
+        const { date, sku, fnsku, disposition, order_type, order_status, shipped_quantity, disposed_quantity, removal_fee } = c;
+        if (order_status === 'Completed' && disposition === 'Sellable') {
+            if (disposed_quantity !== undefined && disposed_quantity !== 0 && order_type === 'Disposal') {
+                transactions.push({
+                    date: parseDate(date),
+                    sku, fnsku,
+                    type: order_type,
+                    quantity: disposed_quantity,
+                    disposition: disposition
+                });
+            }
+            if ((order_type === 'Return' || order_type === 'Liquidations') && shipped_quantity !== 0) {
+                transactions.push({
+                    date, sku, fnsku,
+                    type: order_type,
+                    quantity: shipped_quantity,
+                    disposition: disposition
+                });
+            }
         }
-        if ((order_type === 'Return' || order_type === 'Liquidations') && shipped_quantity !== 0) {
-          transactions.push({
-            date, sku, fnsku,
-            type: order_type,
-            quantity: shipped_quantity,
-            disposition: disposition
-          });
-        }
-      }
     });
-  
+
     return transactions.map(t => new Transaction(
-      t.date,
-      t.sku,
-      t.fnsku,
-      t.type,
-      t.quantity,
-      t.disposition
+        t.date,
+        t.sku,
+        t.fnsku,
+        t.type,
+        t.quantity,
+        t.disposition
     ));
-  }
-  
+}
+
 function GenerateFile() {
     const worksheet = workbook.Sheets[0];
-    const ws1 = il.Sheets["239409019489"]
+    const ws1 = il.Sheets["240848019495"]
     const ws2 = wb_inventory.Sheets["Inventory 06.05"]
     const ws3 = rm.Sheets["Thành"]
 
@@ -300,8 +342,9 @@ function GenerateFile() {
         )
     })
     let transations = getListTransaction(inventoryLedger, removeOrder)
-    console.log(transations);
+    //console.log(transations);
     let rs = getSKUData(payments, inventoryLedger, inventory);
+    // console.log(rs);
     // rs.forEach(e=>{
     //     for(var i=0;i< transations.length;i++){
     //         if(e.sku === transations[i].sku){
