@@ -1,42 +1,44 @@
-function findReferenceID(data, thresholds) {
-  let referenceIDTotals = {};
-  let currentTotal = 0;
-  let result = [];
-
-  for (let i = 0; i < data.length; i++) {
-    let row = data[i];
-    let referenceID = row["referenceID"];
-    let quantity = parseInt(row["quantity"]);
-
-    if (referenceID in referenceIDTotals) {
-      referenceIDTotals[referenceID] += quantity;
-    } else {
-      referenceIDTotals[referenceID] = quantity;
-    }
-
-    currentTotal += quantity;
-
-    for (let j = 0; j < thresholds.length; j++) {
-      if (currentTotal > thresholds[j] && !result[j]) {
-        result[j] = referenceID;
-      } else if (currentTotal <= thresholds[j]) {
-        break;
-      }
-    }
+data = [
+  {
+      "Sku": 1,
+      "fnsku": "abc",
+      "referenceID": "FBA170L0THG1",
+      "date": "2023-03-17T00:00:00-0700"
+  },
+  {
+      "Sku": 1,
+      "fnsku": "abc",
+      "referenceID": "FBA170L0THG1",
+      "date": "2022-01-01T00:00:00-0800"
+  },
+  {
+      "Sku": 1,
+      "fnsku": "abc",
+      "referenceID": "FBA16V64L910",
+      "date": "2023-01-04T00:00:00-0800"
+  },
+  {
+      "Sku": 1,
+      "fnsku": "abc",
+      "referenceID": "FBA16V64L910",
+      "date": "2023-05-01T00:00:00-0800"
+  },
+  {
+    "Sku": 1,
+    "fnsku": "def",
+    "referenceID": "FBA16V64L910",
+    "date": "2022-03-04T00:00:00-0800"
   }
+]
+data.sort((a, b) => {
+    if (a.referenceID === b.referenceID) {
+      // Sắp xếp các bản ghi có cùng sku và cùng referenceID theo date tăng dần
+      return new Date(a.date) - new Date(b.date);
+    } else {
+      // Sắp xếp các bản ghi có cùng sku nhưng khác referenceID theo date giảm dần
+      return new Date(b.date) - new Date(a.date);
+    }
+});
 
-  return result;
-}
+console.log(data);
 
-// Example usage
-const data = [
-  { referenceID: "A", quantity: 2 },
-  { referenceID: "B", quantity: 3 },
-  { referenceID: "C", quantity: 6 },
-];
-
-const thresholds = [1, 3, 10];
-
-const result = findReferenceID(data, thresholds);
-
-console.log(result); // Output: ["B", "C", "C"]

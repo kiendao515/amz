@@ -46,7 +46,7 @@ class Payment {
 
 
 class InventoryLedger {
-    constructor(date, fnsku, msku, quantity, referenceID, disposition, event_type) {
+    constructor(date, fnsku, msku, quantity, referenceID, disposition, event_type,date_time) {
         this.date = date;
         this.fnsku = fnsku;
         this.msku = msku;
@@ -54,6 +54,7 @@ class InventoryLedger {
         this.referenceID = referenceID;
         this.disposition = disposition;
         this.event_type = event_type;
+        this.date_time = date_time;
     }
 }
 class Inventory {
@@ -113,22 +114,18 @@ class CostOfGood {
 
 function getSKUData(paymentList, inventoryLedger, inventory) {
     const inventoryLedgerList = [];
-    const listReference = []
-    let referenceIDTotals = {};
-    let currentTotal = 0;
-    let result = [];
     let skuData = {}
     inventoryLedger.forEach(element => {
-        const { date, fnsku, msku, quantity, disposition, event_type, referenceID } = element;
-        if (event_type === 'Receipts' && referenceID != undefined) {
+        const { date, fnsku, msku, quantity, disposition, event_type, referenceID,date_time } = element;
+        if (event_type === 'Receipts' && referenceID != undefined && new Date(date_time) < new Date("05/07/2023") ) {
             inventoryLedgerList.push({
-                date, msku, fnsku,
+                date:date_time, msku, fnsku,
                 shipmentID: referenceID,
                 quantity: quantity
             })
             if (!skuData[msku]) {
                 skuData[msku] = {
-                    date, msku, fnsku,
+                    date:date_time, msku, fnsku,
                     shipmentID: referenceID,
                     sale_quantity: 0,
                     total_inventory: 0
@@ -147,8 +144,15 @@ function getSKUData(paymentList, inventoryLedger, inventory) {
 
     Object.values(skuData).forEach(v => {
         const filteredData = inventoryLedgerList.filter(element => v.msku === element.msku);
+        filteredData.sort((a, b) => {
+            if (a.shipmentID === b.shipmentID) {
+              return new Date(a.date) - new Date(b.date);
+            } else {
+              // Sắp xếp các bản ghi có cùng sku nhưng khác referenceID theo date giảm dần
+              return new Date(b.date) - new Date(a.date);
+            }
+        });
         const referenceIDTotals = [];
-
         filteredData.forEach(inventory => {
             const referenceID = inventory.shipmentID;
 
@@ -313,7 +317,8 @@ function GenerateFile() {
             row['Quantity'],
             row['Reference ID'],
             row['Disposition'],
-            row['Event Type']
+            row['Event Type'],
+            row['Date and Time']
         )
     })
 
