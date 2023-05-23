@@ -2,7 +2,7 @@ const XLSX = require('xlsx');
 
 const workbook = XLSX.readFile('Payment 12.07.22 - 05.05.23 (Thành).xlsx');
 const rm = XLSX.readFile("Removal Order Detail 01.01.22 - 06.05.23.xlsx")
-const il = XLSX.readFile("Inventory Ledger 18.05.22 - 18.05.23.xlsx")
+const il = XLSX.readFile("Inventory-Ledger-18.05.22-18.05.23.xlsx")
 const wb_inventory = XLSX.readFile("Inventory 06.05.xlsx")
 const { getJsDateFromExcel } = require("excel-date-to-js");
 
@@ -46,7 +46,7 @@ class Payment {
 
 
 class InventoryLedger {
-    constructor(date, fnsku, msku, quantity, referenceID, disposition, event_type,date_time) {
+    constructor(date, fnsku, msku, quantity, referenceID, disposition, event_type, date_time) {
         this.date = date;
         this.fnsku = fnsku;
         this.msku = msku;
@@ -112,20 +112,28 @@ class CostOfGood {
     }
 }
 
+class Cog {
+    constructor(sku, fnsku, date) {
+        this.sku = sku;
+        this.fnsku = fnsku;
+        this.date = date;
+    }
+}
+
 function getSKUData(paymentList, inventoryLedger, inventory) {
     const inventoryLedgerList = [];
     let skuData = {}
     inventoryLedger.forEach(element => {
-        const { date, fnsku, msku, quantity, disposition, event_type, referenceID,date_time } = element;
-        if (event_type === 'Receipts' && referenceID != undefined && new Date(date_time) < new Date("05/07/2023") ) {
+        const { date, fnsku, msku, quantity, disposition, event_type, referenceID, date_time } = element;
+        if (event_type === 'Receipts' && referenceID != undefined && new Date(date_time) < new Date("05/06/2023")) {
             inventoryLedgerList.push({
-                date:date_time, msku, fnsku,
+                date: date_time, msku, fnsku,
                 shipmentID: referenceID,
                 quantity: quantity
             })
             if (!skuData[msku]) {
                 skuData[msku] = {
-                    date:date_time, msku, fnsku,
+                    date: date_time, msku, fnsku,
                     shipmentID: referenceID,
                     sale_quantity: 0,
                     total_inventory: 0
@@ -143,25 +151,46 @@ function getSKUData(paymentList, inventoryLedger, inventory) {
     });
 
     Object.values(skuData).forEach(v => {
-        const filteredData = inventoryLedgerList.filter(element => v.msku === element.msku);
-        filteredData.sort((a, b) => {
-            if (a.shipmentID === b.shipmentID) {
-              return new Date(a.date) - new Date(b.date);
-            } else {
-              // Sắp xếp các bản ghi có cùng sku nhưng khác referenceID theo date giảm dần
-              return new Date(b.date) - new Date(a.date);
+        let filteredData = inventoryLedgerList.filter(element => v.msku === element.msku);
+        const groupedRecords = filteredData.reduce((groups, record) => {
+            const referenceID = record.shipmentID;
+            if (!groups[referenceID]) {
+                groups[referenceID] = [];
             }
-        });
-        const referenceIDTotals = [];
-        filteredData.forEach(inventory => {
-            const referenceID = inventory.shipmentID;
+            groups[referenceID].push(record);
+            return groups;
+        }, {});
 
-            if (!referenceIDTotals.includes(referenceID)) {
-                const filtered = inventoryLedger.filter(obj => obj.shipmentID === referenceID);
-                referenceIDTotals.push(referenceID);
+        // Step 2: Sort records within each group by date in ascending order
+        for (const referenceID in groupedRecords) {
+            groupedRecords[referenceID].sort((a, b) => {
+                return new Date(a.date) - new Date(b.date);
+            });
+        }
+
+        // Step 3: Combine groups into a new sorted list
+        const sortedRecords = Object.values(groupedRecords).flat();
+        const distinctRecords = [];
+        let previousReferenceID = null;
+
+        for (const record of sortedRecords) {
+            const currentReferenceID = record.shipmentID;
+
+            if (currentReferenceID !== previousReferenceID) {
+                distinctRecords.push(record);
+                previousReferenceID = currentReferenceID;
+            }
+        }
+
+
+        distinctRecords.sort((a, b) => {
+            if (a.shipmentID !== b.shipmentID) {
+                // Sắp xếp các bản ghi có cùng sku và cùng referenceID theo date tăng dần
+                return new Date(b.date) - new Date(a.date);
             }
         });
-        v.shipmentID = referenceIDTotals;
+        const referenceIDs = distinctRecords.map(item => item.shipmentID);
+        v.shipmentID = referenceIDs;
     });
     Object.values(skuData).forEach(sku => {
         let tmp = []
@@ -173,21 +202,17 @@ function getSKUData(paymentList, inventoryLedger, inventory) {
         sku.sale_quantity = tmp;
     });
     Object.values(skuData).forEach(sku => {
-        let count =0;
-        let total =0;
+        let count = 0;
+        let total = 0;
         for (let i = 0; i < sku.shipmentID.length; i++) {
             total += sku.sale_quantity[i];
-            count = count +1;;
-            if(total >= sku.total_inventory){
+            count = count + 1;
+            if (total >= sku.total_inventory) {
                 sku.sale_quantity = total;
-                sku.shipmentID = sku.shipmentID[i] 
-            }else if(total < sku.total_inventory && count === sku.shipmentID.length){
-                sku.sale_quantity = total;
-                sku.shipmentID = sku.shipmentID[i] 
+                sku.shipmentID = sku.shipmentID[i]
             }
         }
     });
-    console.log(skuData);
     return Object.values(skuData).map(sku => new Result(
         sku.date,
         sku.msku,
@@ -214,11 +239,11 @@ function parseDate(input) {
 function getListTransaction(inventoryLedger, removeArr) {
     const transactions = [];
     inventoryLedger.forEach(element => {
-        const { date, fnsku, msku, quantity, disposition, event_type } = element;
-        if (disposition === 'SELLABLE' && (event_type === 'Shipments' || event_type === 'CustomerReturns' ||
+        const { date_time, fnsku, msku, quantity, disposition, event_type } = element;
+        if (new Date(date_time) < new Date("05/06/2023") && disposition === 'SELLABLE' && (event_type === 'Shipments' || event_type === 'CustomerReturns' ||
             event_type === 'Adjustments')) {
             transactions.push({
-                date: parseDate(date),
+                date: date_time,
                 sku: msku,
                 fnsku,
                 type: event_type,
@@ -229,10 +254,8 @@ function getListTransaction(inventoryLedger, removeArr) {
     });
 
     removeArr.forEach(c => {
-        var endDate = parseDate("05/05/2023");
-        var aDate = c.date.length > 7 ? parseDate(c.date.substring(0, 10)) : parseDate(getJsDateFromExcel(c.date).getDate() + "/" + Number(getJsDateFromExcel(c.date).getMonth() + 1) + "/" + getJsDateFromExcel(c.date).getFullYear());
         const { date, sku, fnsku, disposition, order_type, order_status, shipped_quantity, disposed_quantity, removal_fee } = c;
-        if (order_status === 'Completed' && disposition === 'Sellable') {
+        if (order_status === 'Completed' && disposition === 'Sellable' && new Date(date) < new Date("05/06/2023")) {
             if (disposed_quantity !== undefined && disposed_quantity !== 0 && order_type === 'Disposal') {
                 transactions.push({
                     date: parseDate(date),
@@ -260,6 +283,30 @@ function getListTransaction(inventoryLedger, removeArr) {
         t.type,
         t.quantity,
         t.disposition
+    ));
+}
+
+const findDate = (skuData, transaction) => {
+    let cogs = []
+    let count = 0;
+    for (let i = 0; i < skuData.length; i++) {
+        const element = skuData[i];
+        let total = 0;
+        if (element.data > 0) {
+            for (let j = 0; j < transaction.length; j++) {
+                const t = transaction[j];
+                total += t.quantity;
+                if (-element.data >= total) {
+                    cogs.push({ sku: t.sku, fnsku: element.fnsku, date: t.date })
+                    break;
+                }
+            }
+        }
+    }
+    return cogs.map(c => new Cog(
+        c.sku,
+        c.fnsku,
+        c.date
     ));
 }
 
@@ -349,6 +396,8 @@ function GenerateFile() {
     let transations = getListTransaction(inventoryLedger, removeOrder)
     //console.log(transations);
     let rs = getSKUData(payments, inventoryLedger, inventory);
+    let date = findDate(rs, transations);
+
     // console.log(rs);
     // rs.forEach(e=>{
     //     for(var i=0;i< transations.length;i++){
@@ -360,8 +409,10 @@ function GenerateFile() {
     //console.log(rs);
     const newWorksheet = XLSX.utils.json_to_sheet(rs);
     const nw2 = XLSX.utils.json_to_sheet(transations);
+    const nw3 = XLSX.utils.json_to_sheet(date)
     XLSX.utils.book_append_sheet(workbook, newWorksheet, "Giao dịch phát sinh");
     XLSX.utils.book_append_sheet(workbook, nw2, "Danh sách giao dịch bổ sung");
+    XLSX.utils.book_append_sheet(workbook, nw3, "Ngày chuyển giao");
     XLSX.writeFile(workbook, 'temp.xlsx');
 }
 
