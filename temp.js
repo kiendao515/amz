@@ -68,11 +68,12 @@ class Inventory {
 }
 
 class Result {
-    constructor(date, sku, fnsku, shipmentID, sale_quantity, total_inventory, data) {
+    constructor(date, sku, fnsku, shipmentID,nextShipmentID, sale_quantity, total_inventory, data) {
         this.date = date;
         this.sku = sku;
         this.fnsku = fnsku;
         this.shipmentID = shipmentID;
+        this.nextShipmentID = nextShipmentID;
         this.sale_quantity = sale_quantity;
         this.total_inventory = total_inventory;
         this.data = data;
@@ -113,10 +114,17 @@ class CostOfGood {
 }
 
 class Cog {
-    constructor(sku, fnsku, date) {
+    constructor(sku, fnsku,current_shipment,current_shipment_cog, date,to_date, remainder,
+        next_shipment, next_shipment_cog) {
         this.sku = sku;
         this.fnsku = fnsku;
+        this.current_shipment = current_shipment;
+        this.current_shipment_cog = current_shipment_cog;
         this.date = date;
+        this.to_date = to_date;
+        this.remainder = remainder;
+        this.next_shipment = next_shipment;
+        this.next_shipment_cog = next_shipment_cog
     }
 }
 
@@ -135,6 +143,7 @@ function getSKUData(paymentList, inventoryLedger, inventory) {
                 skuData[msku] = {
                     date: date_time, msku, fnsku,
                     shipmentID: referenceID,
+                    nextShipmentID:null,
                     sale_quantity: 0,
                     total_inventory: 0
                 }
@@ -209,6 +218,9 @@ function getSKUData(paymentList, inventoryLedger, inventory) {
             count = count + 1;
             if (total >= sku.total_inventory) {
                 sku.sale_quantity = total;
+                if(sku.shipmentID[i-1]){
+                    sku.nextShipmentID = sku.shipmentID[i-1];
+                }
                 sku.shipmentID = sku.shipmentID[i]
             }
         }
@@ -218,6 +230,7 @@ function getSKUData(paymentList, inventoryLedger, inventory) {
         sku.msku,
         sku.fnsku,
         sku.shipmentID,
+        sku.nextShipmentID,
         sku.sale_quantity,
         sku.total_inventory,
         sku.sale_quantity - sku.total_inventory
@@ -241,7 +254,7 @@ function getListTransaction(inventoryLedger, removeArr) {
     inventoryLedger.forEach(element => {
         const { date_time, fnsku, msku, quantity, disposition, event_type } = element;
         if (new Date(date_time) < new Date("05/06/2023") && disposition === 'SELLABLE' && (event_type === 'Shipments' || event_type === 'CustomerReturns' ||
-            event_type === 'Adjustments')) {
+            event_type === 'Adjustments' || event_type === 'VendorReturns')) {
             transactions.push({
                 date: date_time,
                 sku: msku,
@@ -287,28 +300,31 @@ function getListTransaction(inventoryLedger, removeArr) {
 }
 
 const findDate = (skuData, transaction) => {
-    let cogs = []
-    let count = 0;
+    const cogs = [];
+
     for (let i = 0; i < skuData.length; i++) {
         const element = skuData[i];
         let total = 0;
         if (element.data > 0) {
             for (let j = 0; j < transaction.length; j++) {
                 const t = transaction[j];
-                total += t.quantity;
-                if (-element.data >= total) {
-                    cogs.push({ sku: t.sku, fnsku: element.fnsku, date: t.date })
-                    break;
+                if (t.sku === element.sku) {
+                    total += t.quantity;
+                    if (-element.data >= total) {
+                        let d = new Date(t.date)
+                        d.setFullYear(d.getFullYear() + 3)
+                        cogs.push(new Cog(t.sku, element.fnsku,element.shipmentID,null, t.date,new Date(d), total + element.data,
+                            element.nextShipmentID,null));
+                        break;
+                    }
                 }
             }
         }
     }
-    return cogs.map(c => new Cog(
-        c.sku,
-        c.fnsku,
-        c.date
-    ));
-}
+
+    return cogs;
+};
+
 
 function GenerateFile() {
     const worksheet = workbook.Sheets[0];
@@ -398,15 +414,7 @@ function GenerateFile() {
     let rs = getSKUData(payments, inventoryLedger, inventory);
     let date = findDate(rs, transations);
 
-    // console.log(rs);
-    // rs.forEach(e=>{
-    //     for(var i=0;i< transations.length;i++){
-    //         if(e.sku === transations[i].sku){
-
-    //         }
-    //     }
-    // })
-    //console.log(rs);
+    
     const newWorksheet = XLSX.utils.json_to_sheet(rs);
     const nw2 = XLSX.utils.json_to_sheet(transations);
     const nw3 = XLSX.utils.json_to_sheet(date)
