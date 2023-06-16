@@ -227,7 +227,6 @@ function getListTransaction(inventoryLedger) {
     ));
 }
 const findPreviousDate = async (skuData, transaction, remainder, currentDate) => {
-    console.log(skuData);
     let listTransactionOfSku = transaction.filter(t => t.sku === skuData.sku);
     let tmp = [];
     let rs = [];
@@ -266,7 +265,7 @@ const findPreviousDate = async (skuData, transaction, remainder, currentDate) =>
                         var currentDateTime = new Date(tmp[index - 1].date);
                         var previousDateTime = new Date(currentDateTime.getTime() - (24 * 60 * 60 * 1000));
                         var previousDateTimeString = previousDateTime.toISOString();
-                        rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date),new Date(previousDateTimeString), total + tmp[index].quantityOfShipment, tmp[index - 1]?.shipmentID, null));
+                        rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date), new Date(previousDateTimeString), total + tmp[index].quantityOfShipment, tmp[index - 1]?.shipmentID, null));
                     }
                     break;
                 }
@@ -315,6 +314,16 @@ const findDate = async (skuData, transaction) => {
     return [cogs, transaction];
 };
 
+const handleWriteAllShipment = async (rs) => {
+    rs.forEach(s => {
+        s.listShipmentID = s.listShipmentID.join(',');
+        s.listQuantityOfShipment = s.listQuantityOfShipment.map(qty => {
+            return Number.isNaN(qty) ? '' : qty;
+        }).join(',');
+    })
+    return rs;
+}
+
 
 GenerateFile = async () => {
     const worksheet = workbook.Sheets[0];
@@ -347,12 +356,14 @@ GenerateFile = async () => {
         )
     })
     let transations = getListTransaction(inventoryLedger)
-    //console.log(transations);
     let rs = getSKUData(inventoryLedger, inventory);
     let result = await findDate(rs, transations)
     let date = result[0];
     let transaction_shipment = result[1];
-    const newWorksheet = XLSX.utils.json_to_sheet(rs);
+
+    let newRusult = await handleWriteAllShipment(rs);
+
+    const newWorksheet = XLSX.utils.json_to_sheet(newRusult);
     const nw2 = XLSX.utils.json_to_sheet(transaction_shipment);
     const nw3 = XLSX.utils.json_to_sheet(date)
     XLSX.utils.book_append_sheet(workbook, newWorksheet, "Giao dịch phát sinh");

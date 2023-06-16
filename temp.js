@@ -103,16 +103,6 @@ class Transaction {
     }
 }
 
-class CostOfGood {
-    constructor(sku, fnsku, from_date, to_date, cogs) {
-        this.sku = sku;
-        this.fnsku = fnsku;
-        this.from_date = from_date;
-        this.to_date = to_date;
-        this.cogs = cogs;
-    }
-}
-
 class Cog {
     constructor(sku, fnsku,current_shipment,current_shipment_cog, date,to_date, remainder,
         next_shipment, next_shipment_cog) {
