@@ -1,5 +1,6 @@
 const XLSX = require('xlsx');
 const il = XLSX.readFile("Inventory-Ledger-06.05.23-07.06.23.xlsx")
+const inventory = XLSX.readFile('Inventory-08.06 (1).xlsx')
 const workbook = XLSX.readFile('output.xlsx');
 const { getJsDateFromExcel } = require("excel-date-to-js");
 class InventoryLedger {
@@ -43,7 +44,7 @@ class Cog {
 }
 class Result {
     constructor(date, sku, fnsku, shipmentID, nextShipmentID, sale_quantity, total_inventory, data, listShipmentID,
-        listQuantityOfShipment) {
+        listQuantityOfShipment, total_units_from_now, total_incurred_units, units_in_exported_date_theory, units_in_exported_date_real, difference) {
         this.date = date;
         this.sku = sku;
         this.fnsku = fnsku;
@@ -54,6 +55,11 @@ class Result {
         this.data = data;
         this.listShipmentID = listShipmentID;
         this.listQuantityOfShipment = listQuantityOfShipment;
+        this.total_units_from_now = total_units_from_now;
+        this.total_incurred_units = total_incurred_units;
+        this.units_in_exported_date_theory = units_in_exported_date_theory;
+        this.units_in_exported_date_real = units_in_exported_date_real
+        this.difference = difference;
     }
 }
 function getListTransaction(inventoryLedger) {
@@ -197,12 +203,8 @@ const findNextDate = async (skuData, transactions, remainder) => {
         console.log(filteredTransactions);
         for (let j = 0; j < filteredTransactions.length; j++) {
             const t = filteredTransactions[j];
-            console.log("chay vao day", t);
             if (t.sku === skuData.sku) {
                 total += t.quantity;
-                if (skuData.sku === 'Template-set3') {
-                    console.log(t, total);
-                }
                 if (-tmp[index].quantityOfShipment >= total) {
 
                     t.shipmentID = tmp[index + 1]?.shipmentID;
@@ -246,57 +248,102 @@ const findNextDate = async (skuData, transactions, remainder) => {
     return cogs;
 };
 function ExcelDateToJSDate(serial) {
-    var utc_days  = Math.floor(serial - 25569);
-    var utc_value = utc_days * 86400;                                        
+    var utc_days = Math.floor(serial - 25569);
+    var utc_value = utc_days * 86400;
     var date_info = new Date(utc_value * 1000);
- 
+
     var fractional_day = serial - Math.floor(serial) + 0.0000001;
- 
+
     var total_seconds = Math.floor(86400 * fractional_day);
- 
+
     var seconds = total_seconds % 60;
- 
+
     total_seconds -= seconds;
- 
+
     var hours = Math.floor(total_seconds / (60 * 60));
     var minutes = Math.floor(total_seconds / 60) % 60;
     return new Date(date_info.getFullYear(), date_info.getMonth(), date_info.getDate(), hours, minutes, seconds);
- };
-const findFinalDate =async (result, skuData) => {
-    let d= []
+};
+const findFinalDate = async (result, skuData) => {
+    let d = []
     skuData.forEach(s => {
         let rs = result.filter(r => r.sku === s.sku)
-        for(var i = 0; i < rs.length; i++){
-            if(rs[i].date.toString().includes('.')){
+        for (var i = 0; i < rs.length; i++) {
+            if (rs[i].date.toString().includes('.')) {
                 rs[i].date = ExcelDateToJSDate(rs[i].date)
             }
-            if(rs[i].to_date?.toString().includes('.')){
-                rs[i].to_date= ExcelDateToJSDate(rs[i].to_date)
+            if (rs[i].to_date?.toString().includes('.')) {
+                rs[i].to_date = ExcelDateToJSDate(rs[i].to_date)
             }
         }
         rs = rs.sort((a, b) => new Date(a.date) - new Date(b.date));
-        if(rs.length != 0){
-            for(var i = 0; i < rs.length-1; i++){
-                rs[i].to_date =rs[i+1].date;
+        if (rs.length != 0) {
+            for (var i = 0; i < rs.length - 1; i++) {
+                rs[i].to_date = rs[i + 1].date;
             }
             // let currentDate = rs[rs.length-1].date;
             // currentDate.setFullYear(currentDate.getFullYear() + 3);
             // rs[rs.length-1].to_date = new Date(currentDate.toISOString())
         }
-        for(var i = rs.length-1 ; i >=0; i--){
+        for (var i = rs.length - 1; i >= 0; i--) {
             d.push(rs[i]);
         }
     })
     return d;
 }
+let findDiffereceFromInventory = async (futureDate, inventoryData, transaction, finalDate) => {
+    const firstElementsMap = new Map();
+    for (const item of finalDate) {
+        const { sku, fnsku, current_shipment, current_shipment_cog, date, to_date, remainder,
+            next_shipment, next_shipment_cog } = item;
+        // Kiểm tra xem SKU đã tồn tại trong Map chưa
+        if (!firstElementsMap.has(sku)) {
+            // Nếu chưa tồn tại, thêm phần tử hiện tại vào Map theo SKU
+            firstElementsMap.set(sku, {
+                sku, fnsku, current_shipment, current_shipment_cog, date, to_date, remainder,
+                next_shipment, next_shipment_cog
+            });
+        }
+    }
+    const firstElements = Array.from(firstElementsMap.values());
+    futureDate.forEach(sku => {
+        let skus = firstElements.filter(s => s.sku === sku.sku)
+        let total_units_from_now = 0;
+        let check = false
+        let index = sku.listShipmentID.findIndex(s => s === skus[0]?.current_shipment)
+        for (var j = 0; j <= index; j++) {
+            total_units_from_now += parseInt(sku.listQuantityOfShipment[j])
+        }
+        sku.total_units_from_now = total_units_from_now;
+        sku.total_incurred_units= 0;
+        sku.difference = 0;
+        let tmp = transaction.filter(t => t.sku === sku.sku && t.type !== 'Receipts')
+        let i = tmp.findIndex(t => t.shipmentID === skus[0]?.current_shipment)
+        console.log(i);
+        for(var j=0;j<= i; j++){
+            sku.total_incurred_units -= tmp[j].quantity
+        }
+        sku.units_in_exported_date_theory = sku.total_units_from_now - sku.total_incurred_units;
+        let iventory = inventoryData.filter(t => t.sku === sku.sku)
+        if(iventory.length ==0){
+            sku.units_in_exported_date_real = 0;
+        }else{
+            sku.units_in_exported_date_real = iventory[0]?.['afn-fulfillable-quantity'] + iventory[0]?.['afn-reserved-quantity'];
+        }
+        sku.difference = sku.units_in_exported_date_theory - sku.units_in_exported_date_real
+    })
+    return futureDate
+}
 
 GenerateFile = async () => {
     const ws1 = il.Sheets["Sheet1"]
+    const inventorySheet = inventory.Sheets["Sheet1"]
     const worksheet = workbook.Sheets['Danh sách giao dịch bổ sung']; // Replace 'Sheet1' with the actual sheet name
     const ws2 = workbook.Sheets['Ngày chuyển giao'];
     const skuData = workbook.Sheets['Giao dịch phát sinh']
     // Use XLSX.utils.sheet_to_json() to convert the worksheet to a JSON array
     const arr8 = XLSX.utils.sheet_to_json(ws1)
+    const inventoryData = XLSX.utils.sheet_to_json(inventorySheet)
     let inventoryLedger = arr8.map((row) => {
         return new InventoryLedger(
             row['Date'],
@@ -321,7 +368,8 @@ GenerateFile = async () => {
             row['total_inventory'],
             row['data'],
             row['listShipmentID'],
-            row['listQuantityOfShipment']
+            row['listQuantityOfShipment'],
+            null, null, null, null, null
         )
     })
 
@@ -337,8 +385,12 @@ GenerateFile = async () => {
     const newSheet = XLSX.utils.json_to_sheet(currentDate[1]);
     //const newSheetDate = XLSX.utils.json_to_sheet(mergedDate)
     const finalDate = await findFinalDate(mergedDate, skus)
-    console.log("date cuoi cug day",finalDate);
     const newSheetDate = XLSX.utils.json_to_sheet(finalDate)
+    // tìm các cột còn lại 
+    const returns = await findDiffereceFromInventory(futureDate, inventoryData, currentDate[1], finalDate)
+    console.log('finakl rs', returns);
+    const returnSheet = XLSX.utils.json_to_sheet(returns)
+    XLSX.utils.book_append_sheet(workbook, returnSheet, "Giao dịch phát sinh(final)");
     workbook.Sheets['Danh sách giao dịch bổ sung'] = newSheet; // Replace 'Sheet1' with the actual sheet name
     workbook.Sheets['Ngày chuyển giao'] = newSheetDate;
     XLSX.writeFile(workbook, 'news.xlsx');
