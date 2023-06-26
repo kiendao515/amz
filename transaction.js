@@ -150,7 +150,7 @@ const findDate = async (skuData, transactions) => {
                             element.listShipmentID[index - 2],
                             null
                         ));
-                        let rs = await findNextDate(element,transactions,parseInt(total) + parseInt(element.listQuantityOfShipment[index]))
+                        let rs = await findNextDate(element, transactions, parseInt(total) + parseInt(element.listQuantityOfShipment[index]))
                         console.log(rs);
                         cogs.push(...rs)
                         break;
@@ -197,24 +197,26 @@ const findNextDate = async (skuData, transactions, remainder) => {
         console.log(filteredTransactions);
         for (let j = 0; j < filteredTransactions.length; j++) {
             const t = filteredTransactions[j];
-            console.log("chay vao day",t);
+            console.log("chay vao day", t);
             if (t.sku === skuData.sku) {
                 total += t.quantity;
-                if(skuData.sku === 'Template-set3'){
-                    console.log(t,total);
+                if (skuData.sku === 'Template-set3') {
+                    console.log(t, total);
                 }
                 if (-tmp[index].quantityOfShipment >= total) {
 
-                    t.shipmentID = tmp[index+1]?.shipmentID;
+                    t.shipmentID = tmp[index + 1]?.shipmentID;
                     tmp[index].date = new Date(t.date);
-                    if(tmp[index + 1]?.shipmentID != undefined){
+                    if (tmp[index + 1]?.shipmentID != undefined) {
+                        const d = new Date(t.date);
+                        d.setFullYear(d.getFullYear() + 3);
                         cogs.push(new Cog(
                             t.sku,
                             t.fnsku,
                             tmp[index + 1]?.shipmentID,
                             null,
                             new Date(t.date),
-                            null,
+                            new Date(d),
                             total + tmp[index].quantityOfShipment,
                             tmp[index + 2]?.shipmentID,
                             null
@@ -228,12 +230,12 @@ const findNextDate = async (skuData, transactions, remainder) => {
 
         // Update filteredTransactions based on the stopIndex
         if (stopIndex !== -1) {
-            filteredTransactions = filteredTransactions.slice(stopIndex+1);
+            filteredTransactions = filteredTransactions.slice(stopIndex + 1);
         }
 
         // Process the next element in tmp array recursively
         // if (tmp[index + 2]?.shipmentID !== undefined) {
-            processNextTmpElement(index + 1);
+        processNextTmpElement(index + 1);
         //}
     };
 
@@ -243,6 +245,50 @@ const findNextDate = async (skuData, transactions, remainder) => {
     // Return the result array cogs or perform additional operations if needed
     return cogs;
 };
+function ExcelDateToJSDate(serial) {
+    var utc_days  = Math.floor(serial - 25569);
+    var utc_value = utc_days * 86400;                                        
+    var date_info = new Date(utc_value * 1000);
+ 
+    var fractional_day = serial - Math.floor(serial) + 0.0000001;
+ 
+    var total_seconds = Math.floor(86400 * fractional_day);
+ 
+    var seconds = total_seconds % 60;
+ 
+    total_seconds -= seconds;
+ 
+    var hours = Math.floor(total_seconds / (60 * 60));
+    var minutes = Math.floor(total_seconds / 60) % 60;
+    return new Date(date_info.getFullYear(), date_info.getMonth(), date_info.getDate(), hours, minutes, seconds);
+ };
+const findFinalDate =async (result, skuData) => {
+    let d= []
+    skuData.forEach(s => {
+        let rs = result.filter(r => r.sku === s.sku)
+        for(var i = 0; i < rs.length; i++){
+            if(rs[i].date.toString().includes('.')){
+                rs[i].date = ExcelDateToJSDate(rs[i].date)
+            }
+            if(rs[i].to_date?.toString().includes('.')){
+                rs[i].to_date= ExcelDateToJSDate(rs[i].to_date)
+            }
+        }
+        rs = rs.sort((a, b) => new Date(a.date) - new Date(b.date));
+        if(rs.length != 0){
+            for(var i = 0; i < rs.length-1; i++){
+                rs[i].to_date =rs[i+1].date;
+            }
+            // let currentDate = rs[rs.length-1].date;
+            // currentDate.setFullYear(currentDate.getFullYear() + 3);
+            // rs[rs.length-1].to_date = new Date(currentDate.toISOString())
+        }
+        for(var i = rs.length-1 ; i >=0; i--){
+            d.push(rs[i]);
+        }
+    })
+    return d;
+}
 
 GenerateFile = async () => {
     const ws1 = il.Sheets["Sheet1"]
@@ -289,7 +335,10 @@ GenerateFile = async () => {
     let currentDate = await findDate(skus, mergedData)
     const mergedDate = [...currentDate[0], ...existingDate];
     const newSheet = XLSX.utils.json_to_sheet(currentDate[1]);
-    const newSheetDate = XLSX.utils.json_to_sheet(mergedDate)
+    //const newSheetDate = XLSX.utils.json_to_sheet(mergedDate)
+    const finalDate = await findFinalDate(mergedDate, skus)
+    console.log("date cuoi cug day",finalDate);
+    const newSheetDate = XLSX.utils.json_to_sheet(finalDate)
     workbook.Sheets['Danh sách giao dịch bổ sung'] = newSheet; // Replace 'Sheet1' with the actual sheet name
     workbook.Sheets['Ngày chuyển giao'] = newSheetDate;
     XLSX.writeFile(workbook, 'news.xlsx');
