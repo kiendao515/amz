@@ -190,9 +190,7 @@ const findNextDate = async (skuData, transactions, remainder) => {
     let filteredTransactions = listTransactionOfSku;
     const startIndex = listTransactionOfSku.findIndex(t => t.shipmentID === skuData.nextShipmentID);
     filteredTransactions = listTransactionOfSku.slice(0, startIndex).reverse();
-    // if(skuData.sku === 'Template-set3'){
-    //     console.log(filteredTransactions);
-    // }
+
 
     const processNextTmpElement = (index) => {
         if (index >= tmp.length) {
@@ -200,45 +198,51 @@ const findNextDate = async (skuData, transactions, remainder) => {
         }
         let total = 0;
         let stopIndex = -1;
-        console.log(filteredTransactions);
-        for (let j = 0; j < filteredTransactions.length; j++) {
-            const t = filteredTransactions[j];
-            if (t.sku === skuData.sku) {
-                total += t.quantity;
-                if (-tmp[index].quantityOfShipment >= total) {
+        let totalQuantityOfSku = filteredTransactions.filter(t => t.sku === skuData.sku)
+        let checkTotal = 0;
+        for (let j = 0; j < totalQuantityOfSku.length; j++) {
+            checkTotal += totalQuantityOfSku[j].quantity;
+        }
+        if (-tmp[index].quantityOfShipment >= checkTotal) {
+            for (let j = 0; j < filteredTransactions.length; j++) {
+                const t = filteredTransactions[j];
+                if (t.sku === skuData.sku) {
+                    total += t.quantity;
+                    if (-tmp[index].quantityOfShipment >= total) {
 
-                    t.shipmentID = tmp[index + 1]?.shipmentID;
-                    tmp[index].date = new Date(t.date);
-                    if (tmp[index + 1]?.shipmentID != undefined) {
-                        const d = new Date(t.date);
-                        d.setFullYear(d.getFullYear() + 3);
-                        cogs.push(new Cog(
-                            t.sku,
-                            t.fnsku,
-                            tmp[index + 1]?.shipmentID,
-                            null,
-                            new Date(t.date),
-                            new Date(d),
-                            total + tmp[index].quantityOfShipment,
-                            tmp[index + 2]?.shipmentID,
-                            null
-                        ));
+                        t.shipmentID = tmp[index + 1]?.shipmentID;
+                        tmp[index].date = new Date(t.date);
+                        if (tmp[index + 1]?.shipmentID != undefined) {
+                            const d = new Date(t.date);
+                            d.setFullYear(d.getFullYear() + 3);
+                            cogs.push(new Cog(
+                                t.sku,
+                                t.fnsku,
+                                tmp[index + 1]?.shipmentID,
+                                null,
+                                new Date(t.date),
+                                new Date(d),
+                                total + tmp[index].quantityOfShipment,
+                                tmp[index + 2]?.shipmentID,
+                                null
+                            ));
+                        }
+                        stopIndex = j;
+                        break;
                     }
-                    stopIndex = j;
-                    break;
                 }
             }
-        }
 
-        // Update filteredTransactions based on the stopIndex
-        if (stopIndex !== -1) {
-            filteredTransactions = filteredTransactions.slice(stopIndex + 1);
-        }
+            // Update filteredTransactions based on the stopIndex
+            if (stopIndex !== -1) {
+                filteredTransactions = filteredTransactions.slice(stopIndex + 1);
+            }
 
-        // Process the next element in tmp array recursively
-        // if (tmp[index + 2]?.shipmentID !== undefined) {
-        processNextTmpElement(index + 1);
-        //}
+            // Process the next element in tmp array recursively
+            if (tmp[index + 2]?.shipmentID !== undefined) {
+                processNextTmpElement(index + 1);
+            }
+        }
     };
 
     // Start the recursive processing from the first element of tmp array
@@ -276,7 +280,16 @@ const findFinalDate = async (result, skuData) => {
                 rs[i].to_date = ExcelDateToJSDate(rs[i].to_date)
             }
         }
-        rs = rs.sort((a, b) => new Date(a.date) - new Date(b.date));
+        rs.sort((a, b) => {
+            const nextShipmentIDA = a.nextShipmentID?.toLowerCase();
+            const shipmentIDB = b.shipmentID?.toLowerCase();
+          
+            if (nextShipmentIDA === shipmentIDB) {
+              return -1; // Bản ghi a đứng trước bản ghi b
+            } else {
+              return 1; // Bản ghi b đứng trước bản ghi a hoặc không có sự liên quan giữa hai bản ghi
+            }
+        });
         if (rs.length != 0) {
             for (var i = 0; i < rs.length - 1; i++) {
                 rs[i].to_date = rs[i + 1].date;
@@ -385,6 +398,7 @@ GenerateFile = async () => {
     const newSheet = XLSX.utils.json_to_sheet(currentDate[1]);
     //const newSheetDate = XLSX.utils.json_to_sheet(mergedDate)
     const finalDate = await findFinalDate(mergedDate, skus)
+    console.log("date cuoi cug day", finalDate);
     const newSheetDate = XLSX.utils.json_to_sheet(finalDate)
     // tìm các cột còn lại 
     const returns = await findDiffereceFromInventory(futureDate, inventoryData, currentDate[1], finalDate)
