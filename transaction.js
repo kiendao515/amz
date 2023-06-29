@@ -283,11 +283,11 @@ const findFinalDate = async (result, skuData) => {
         rs.sort((a, b) => {
             const nextShipmentIDA = a.nextShipmentID?.toLowerCase();
             const shipmentIDB = b.shipmentID?.toLowerCase();
-          
+
             if (nextShipmentIDA === shipmentIDB) {
-              return -1; // Bản ghi a đứng trước bản ghi b
+                return -1; // Bản ghi a đứng trước bản ghi b
             } else {
-              return 1; // Bản ghi b đứng trước bản ghi a hoặc không có sự liên quan giữa hai bản ghi
+                return 1; // Bản ghi b đứng trước bản ghi a hoặc không có sự liên quan giữa hai bản ghi
             }
         });
         if (rs.length != 0) {
@@ -305,6 +305,7 @@ const findFinalDate = async (result, skuData) => {
     return d;
 }
 let findDiffereceFromInventory = async (futureDate, inventoryData, transaction, finalDate) => {
+    console.log("trnss",transaction);
     const firstElementsMap = new Map();
     for (const item of finalDate) {
         const { sku, fnsku, current_shipment, current_shipment_cog, date, to_date, remainder,
@@ -321,26 +322,29 @@ let findDiffereceFromInventory = async (futureDate, inventoryData, transaction, 
     const firstElements = Array.from(firstElementsMap.values());
     futureDate.forEach(sku => {
         let skus = firstElements.filter(s => s.sku === sku.sku)
-        let total_units_from_now = 0;
-        let check = false
-        let index = sku.listShipmentID.findIndex(s => s === skus[0]?.current_shipment)
-        for (var j = 0; j <= index; j++) {
-            total_units_from_now += parseInt(sku.listQuantityOfShipment[j])
+        if (skus.length > 0) {
+            let total_units_from_now = 0;
+            let check = false
+            let index = sku.listShipmentID.findIndex(s => s === skus[0]?.current_shipment)
+            for (var j = 0; j <= index; j++) {
+                total_units_from_now += parseInt(sku.listQuantityOfShipment[j])
+            }
+            sku.total_units_from_now = total_units_from_now;
+        } else {
+            sku.total_units_from_now = sku.listQuantityOfShipment[0]
         }
-        sku.total_units_from_now = total_units_from_now;
-        sku.total_incurred_units= 0;
+        sku.total_incurred_units = 0;
         sku.difference = 0;
         let tmp = transaction.filter(t => t.sku === sku.sku && t.type !== 'Receipts')
         let i = tmp.findIndex(t => t.shipmentID === skus[0]?.current_shipment)
-        console.log(i);
-        for(var j=0;j<= i; j++){
+        for (var j = 0; j <= i; j++) {
             sku.total_incurred_units -= tmp[j].quantity
         }
         sku.units_in_exported_date_theory = sku.total_units_from_now - sku.total_incurred_units;
         let iventory = inventoryData.filter(t => t.sku === sku.sku)
-        if(iventory.length ==0){
+        if (iventory.length == 0) {
             sku.units_in_exported_date_real = 0;
-        }else{
+        } else {
             sku.units_in_exported_date_real = iventory[0]?.['afn-fulfillable-quantity'] + iventory[0]?.['afn-reserved-quantity'];
         }
         sku.difference = sku.units_in_exported_date_theory - sku.units_in_exported_date_real
