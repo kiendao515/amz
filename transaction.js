@@ -305,7 +305,6 @@ const findFinalDate = async (result, skuData) => {
     return d;
 }
 let findDiffereceFromInventory = async (futureDate, inventoryData, transaction, finalDate) => {
-    console.log("trnss",transaction);
     const firstElementsMap = new Map();
     for (const item of finalDate) {
         const { sku, fnsku, current_shipment, current_shipment_cog, date, to_date, remainder,
@@ -330,16 +329,23 @@ let findDiffereceFromInventory = async (futureDate, inventoryData, transaction, 
                 total_units_from_now += parseInt(sku.listQuantityOfShipment[j])
             }
             sku.total_units_from_now = total_units_from_now;
+            sku.total_incurred_units = 0;
+            sku.difference = 0;
+            let tmp = transaction.filter(t => t.sku === sku.sku && t.type !== 'Receipts')
+            let i = tmp.findIndex(t => t.shipmentID === skus[0]?.current_shipment)
+            for (var j = 0; j <= i; j++) {
+                sku.total_incurred_units -= tmp[j].quantity
+            }
         } else {
             sku.total_units_from_now = sku.listQuantityOfShipment[0]
+            sku.total_incurred_units = 0;
+            sku.difference = 0;
+            let tmp = transaction.filter(t => t.sku === sku.sku && t.type !== 'Receipts')
+            for (var j = 0; j < tmp.length; j++) {
+                sku.total_incurred_units -= tmp[j].quantity
+            }
         }
-        sku.total_incurred_units = 0;
-        sku.difference = 0;
-        let tmp = transaction.filter(t => t.sku === sku.sku && t.type !== 'Receipts')
-        let i = tmp.findIndex(t => t.shipmentID === skus[0]?.current_shipment)
-        for (var j = 0; j <= i; j++) {
-            sku.total_incurred_units -= tmp[j].quantity
-        }
+
         sku.units_in_exported_date_theory = sku.total_units_from_now - sku.total_incurred_units;
         let iventory = inventoryData.filter(t => t.sku === sku.sku)
         if (iventory.length == 0) {

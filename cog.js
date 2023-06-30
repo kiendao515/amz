@@ -309,6 +309,10 @@ const findDate = async (skuData, transaction) => {
                     }
                 }
             }
+        }else {
+            let tmp = transaction.filter(t=> t.sku === element.sku)
+            let rs = await findPreviousDate(element, transaction, 0, new Date(tmp[0]?.date));
+            cogs.push(...rs)
         }
     }
     return [cogs, transaction];
