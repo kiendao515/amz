@@ -283,11 +283,11 @@ const findFinalDate = async (result, skuData) => {
         rs.sort((a, b) => {
             const nextShipmentIDA = a.nextShipmentID?.toLowerCase();
             const shipmentIDB = b.shipmentID?.toLowerCase();
-
+          
             if (nextShipmentIDA === shipmentIDB) {
-                return -1; // Bản ghi a đứng trước bản ghi b
+              return -1; // Bản ghi a đứng trước bản ghi b
             } else {
-                return 1; // Bản ghi b đứng trước bản ghi a hoặc không có sự liên quan giữa hai bản ghi
+              return 1; // Bản ghi b đứng trước bản ghi a hoặc không có sự liên quan giữa hai bản ghi
             }
         });
         if (rs.length != 0) {
