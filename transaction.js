@@ -134,43 +134,68 @@ const findDate = async (skuData, transactions) => {
                 let total = 0;
                 let tmp = transactions.filter(t => t.sku === element.sku && t.type != 'Receipts')
                 const matchingTransactionIndex = tmp.indexOf(matchingTransaction);
-                for (let j = matchingTransactionIndex - 1; j >= 0; j--) {
-                    const t = tmp[j];
+                for (let j = matchingTransactionIndex; j >= 0; j--) {
+                    let t = tmp[j];
+                    let k = 0;
+                    if (j - 1 >= 0) {
+                        k = tmp[j - 1]
+                    }
                     total += t.quantity;
-                    // if(element.sku === 'Template-set3'){
-                    //     console.log(t);
-                    //     console.log(-parseInt(element.listQuantityOfShipment[index]),total);
-                    // }
                     if (-parseInt(element.listQuantityOfShipment[index]) >= total) {
-                        const d = new Date(t.date);
-                        d.setFullYear(d.getFullYear() + 3);
-                        t.shipmentID = element.listShipmentID[index - 1];
-                        cogs.push(new Cog(
-                            t.sku,
-                            element.fnsku,
-                            element.listShipmentID[index - 1],
-                            null,
-                            new Date(t.date),
-                            new Date(d),
-                            parseInt(total) + parseInt(element.listQuantityOfShipment[index]),
-                            element.listShipmentID[index - 2],
-                            null
-                        ));
-                        let rs = await findNextDate(element, transactions, parseInt(total) + parseInt(element.listQuantityOfShipment[index]))
-                        console.log(rs);
-                        cogs.push(...rs)
-                        break;
+                        if ((parseInt(total) + parseInt(element.listQuantityOfShipment[index])) === 0) {
+                            const d = new Date(k.date);
+                            d.setFullYear(d.getFullYear() + 3);
+                            k.shipmentID = element.listShipmentID[index - 1];
+                            cogs.push(new Cog(
+                                k.sku,
+                                element.fnsku,
+                                element.listShipmentID[index - 1],
+                                null,
+                                new Date(k.date),
+                                new Date(d),
+                                parseInt(total) + parseInt(element.listQuantityOfShipment[index]),
+                                element.listShipmentID[index - 2],
+                                null
+                            ));
+                            if (index >= 2) {
+                                let rs = await findNextDate(element, transactions, parseInt(total) + parseInt(element.listQuantityOfShipment[index]))
+                                cogs.push(...rs)
+                            }
+                            break;
+                        } else {
+                            const d = new Date(t.date);
+                            d.setFullYear(d.getFullYear() + 3);
+                            t.shipmentID = element.listShipmentID[index - 1];
+                            cogs.push(new Cog(
+                                t.sku,
+                                element.fnsku,
+                                element.listShipmentID[index - 1],
+                                null,
+                                new Date(t.date),
+                                new Date(d),
+                                parseInt(total) + parseInt(element.listQuantityOfShipment[index]),
+                                element.listShipmentID[index - 2],
+                                null
+                            ));
+                            if (index >= 2) {
+                                let rs = await findNextDate(element, transactions, parseInt(total) + parseInt(element.listQuantityOfShipment[index]))
+                                cogs.push(...rs)
+                            }
+                            break;
+                        }
                     }
                 }
             }
         }
     }
-
     return [cogs, transactions];
 };
 
 const findNextDate = async (skuData, transactions, remainder) => {
-    console.log(skuData);
+    if (skuData.sku === 'MN-6KST-82YI') {
+        console.log("skune", skuData, remainder);
+    }
+
     const cogs = [];
     const listTransactionOfSku = transactions.filter(t => t.sku === skuData.sku && t.type !== 'Receipts');
     let tmp = [];
@@ -189,7 +214,7 @@ const findNextDate = async (skuData, transactions, remainder) => {
     }
     let filteredTransactions = listTransactionOfSku;
     const startIndex = listTransactionOfSku.findIndex(t => t.shipmentID === skuData.nextShipmentID);
-    filteredTransactions = listTransactionOfSku.slice(0, startIndex).reverse();
+    filteredTransactions = listTransactionOfSku.slice(0, startIndex + 1).reverse();
 
 
     const processNextTmpElement = (index) => {
@@ -209,8 +234,10 @@ const findNextDate = async (skuData, transactions, remainder) => {
                 if (t.sku === skuData.sku) {
                     total += t.quantity;
                     if (-tmp[index].quantityOfShipment >= total) {
-
                         t.shipmentID = tmp[index + 1]?.shipmentID;
+                        if (skuData.sku === 'BK-SRB5-DBHK') {
+                            console.log("dataaaa", filteredTransactions);
+                        }
                         tmp[index].date = new Date(t.date);
                         if (tmp[index + 1]?.shipmentID != undefined) {
                             const d = new Date(t.date);
@@ -233,9 +260,10 @@ const findNextDate = async (skuData, transactions, remainder) => {
                 }
             }
 
+
             // Update filteredTransactions based on the stopIndex
             if (stopIndex !== -1) {
-                filteredTransactions = filteredTransactions.slice(stopIndex + 1);
+                filteredTransactions = filteredTransactions.slice(stopIndex);
             }
 
             // Process the next element in tmp array recursively
@@ -244,7 +272,6 @@ const findNextDate = async (skuData, transactions, remainder) => {
             }
         }
     };
-
     // Start the recursive processing from the first element of tmp array
     processNextTmpElement(0);
 
@@ -305,6 +332,7 @@ const findFinalDate = async (result, skuData) => {
     return d;
 }
 let findDiffereceFromInventory = async (futureDate, inventoryData, transaction, finalDate) => {
+    console.log("halloi", transaction.filter(t => t.sku === 'MN-6KST-82YI' && t.shipmentID === 'FBA170MXM13R'));
     const firstElementsMap = new Map();
     for (const item of finalDate) {
         const { sku, fnsku, current_shipment, current_shipment_cog, date, to_date, remainder,
@@ -320,6 +348,8 @@ let findDiffereceFromInventory = async (futureDate, inventoryData, transaction, 
     }
     const firstElements = Array.from(firstElementsMap.values());
     futureDate.forEach(sku => {
+        sku.listShipmentID = sku.listShipmentID.split(',')
+        sku.listQuantityOfShipment = sku.listQuantityOfShipment.split(',')
         let skus = firstElements.filter(s => s.sku === sku.sku)
         if (skus.length > 0) {
             let total_units_from_now = 0;
@@ -333,8 +363,18 @@ let findDiffereceFromInventory = async (futureDate, inventoryData, transaction, 
             sku.difference = 0;
             let tmp = transaction.filter(t => t.sku === sku.sku && t.type !== 'Receipts')
             let i = tmp.findIndex(t => t.shipmentID === skus[0]?.current_shipment)
-            for (var j = 0; j <= i; j++) {
-                sku.total_incurred_units -= tmp[j].quantity
+            sku.total_incurred_units -= skus[0].remainder;
+            if (skus[0].remainder === 0) {
+                for (var j = 0; j <= i; j++) {
+                    sku.total_incurred_units -= tmp[j].quantity
+                }
+            } else {
+                for (var j = 0; j < i; j++) {
+                    sku.total_incurred_units -= tmp[j].quantity
+                }
+            }
+            if (sku.sku === 'BK-SRB5-DBHK') {
+                console.log("dati", skus[0].remainder, i);
             }
         } else {
             sku.total_units_from_now = sku.listQuantityOfShipment[0]
@@ -398,21 +438,21 @@ GenerateFile = async () => {
 
     let transations = getListTransaction(inventoryLedger)
     let futureDate = await findFutureDate(skus, transations);
+    let tmp = JSON.parse(JSON.stringify(futureDate));
     const futureDataSheets = XLSX.utils.json_to_sheet(futureDate)
     XLSX.utils.book_append_sheet(workbook, futureDataSheets, "Giao dịch phát sinh(new)");
     const existingData = XLSX.utils.sheet_to_json(worksheet);
     const existingDate = XLSX.utils.sheet_to_json(ws2)
     const mergedData = [...transations, ...existingData];
     let currentDate = await findDate(skus, mergedData)
+    console.log("hahaha", currentDate[1].filter(t => t.sku === 'MN-6KST-82YI'));
     const mergedDate = [...currentDate[0], ...existingDate];
     const newSheet = XLSX.utils.json_to_sheet(currentDate[1]);
     //const newSheetDate = XLSX.utils.json_to_sheet(mergedDate)
     const finalDate = await findFinalDate(mergedDate, skus)
-    console.log("date cuoi cug day", finalDate);
     const newSheetDate = XLSX.utils.json_to_sheet(finalDate)
     // tìm các cột còn lại 
-    const returns = await findDiffereceFromInventory(futureDate, inventoryData, currentDate[1], finalDate)
-    console.log('finakl rs', returns);
+    const returns = await findDiffereceFromInventory(tmp, inventoryData, currentDate[1], finalDate)
     const returnSheet = XLSX.utils.json_to_sheet(returns)
     XLSX.utils.book_append_sheet(workbook, returnSheet, "Giao dịch phát sinh(final)");
     workbook.Sheets['Danh sách giao dịch bổ sung'] = newSheet; // Replace 'Sheet1' with the actual sheet name
