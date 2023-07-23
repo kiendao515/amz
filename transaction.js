@@ -3,6 +3,7 @@ const il = XLSX.readFile("Inventory-Ledger-06.05.23-07.06.23.xlsx")
 const inventory = XLSX.readFile('Inventory-08.06 (1).xlsx')
 const workbook = XLSX.readFile('output.xlsx');
 const { getJsDateFromExcel } = require("excel-date-to-js");
+const axios = require('axios')
 function clamp_range(range) {
     if (range.e.r >= (1 << 20)) range.e.r = (1 << 20) - 1;
     if (range.e.c >= (1 << 14)) range.e.c = (1 << 14) - 1;
@@ -496,6 +497,42 @@ let findDiffereceFromInventory = async (futureDate, inventoryData, transaction, 
     })
     return futureDate
 }
+let writeCogs = async (url, finalDate, transactions, skus) => {
+    const res = await axios.get(url, { responseType: "arraybuffer" });
+    const workbook = XLSX.read(res.data);
+    const cogs = XLSX.utils.sheet_to_json(workbook.Sheets["Sheet1"])
+    for (var i = 0; i < finalDate.length; i++) {
+        let cogDataRow = cogs.filter(c => c['Sku'] === finalDate[i].sku && c['Shipment ID'] === finalDate[i].current_shipment)[0]
+        if (cogDataRow) {
+            finalDate[i].current_shipment_cog = cogDataRow['COGS']
+        }
+    }
+    for (var i = 0; i < skus.length; i++) {
+        let filterTrans = transactions.filter(t => t.sku === skus[i].sku && t.type !== 'Receipts' && t.shipmentID != undefined)
+        let tmp = transactions.filter(t => t.sku === skus[i].sku && t.type !== 'Receipts')
+        if (filterTrans.length != 0) {
+            for (var j = filterTrans.length - 1; j > 0; j--) {
+                let belowIndex = tmp.indexOf(filterTrans[j])
+                let upperIndex = tmp.indexOf(filterTrans[j - 1])
+                console.log(belowIndex, upperIndex);
+                let cogDataRow = cogs.filter(c => c['Sku'] === filterTrans[j].sku && c['Shipment ID'] === filterTrans[j].shipmentID)[0]
+                for (var k = upperIndex + 1; k <= belowIndex; k++) {
+                    if (cogDataRow) {
+                        tmp[k].cogs = cogDataRow['COGS']
+                    }
+                }
+            }
+            let fistIndex = tmp.indexOf(filterTrans[0])
+            let cogDataRow = cogs.filter(c => c['Sku'] === filterTrans[0].sku && c['Shipment ID'] === filterTrans[0].shipmentID)[0]
+            for(var j = 0;j<= fistIndex;j++){
+                if(cogDataRow){
+                    tmp[j].cogs = cogDataRow['COGS']
+                }
+            }
+        }
+    }
+    return [finalDate, transactions];
+}
 
 GenerateFile = async () => {
     const ws1 = il.Sheets["Sheet1"]
@@ -545,13 +582,16 @@ GenerateFile = async () => {
     const mergedData = [...transations, ...existingData];
     let currentDate = await findDate(skus, mergedData)
     const mergedDate = [...currentDate[0], ...existingDate];
-    const newSheet = XLSX.utils.json_to_sheet(currentDate[1]);
     //const newSheetDate = XLSX.utils.json_to_sheet(mergedDate)
     const finalDate = await findFinalDate(mergedDate, skus, futureDate)
-    const newSheetDate = XLSX.utils.json_to_sheet(finalDate)
     // tìm các cột còn lại 
     const returns = await findDiffereceFromInventory(tmp, inventoryData, currentDate[1], finalDate)
-    for(var i =0; i< skus.length ; i++){
+    // tìm cogs và điền cogs
+    let finalDateWithCogs = await writeCogs("https://dl.dropboxusercontent.com/scl/fi/rei6i0wpbwocuxyym9xzd/COGS.xlsx?rlkey=hjy92xapyauogrgwplfbobmvq&dl=1",
+        finalDate, currentDate[1], returns)
+    const newSheetDate = XLSX.utils.json_to_sheet(finalDateWithCogs[0])
+    const newSheet = XLSX.utils.json_to_sheet(finalDateWithCogs[1]);
+    for (var i = 0; i < skus.length; i++) {
         skus[i].total_units_from_now = returns[i].total_units_from_now;
         skus[i].total_incurred_units = returns[i].total_incurred_units;
         skus[i].units_in_exported_date_theory = returns[i].units_in_exported_date_theory;
@@ -577,7 +617,7 @@ GenerateFile = async () => {
     workbook.Sheets['original inventory statistics'] = skuData
     // đổi tên các cột trong sheets ngày chuyển giao
     XLSX.utils.sheet_add_aoa(newSheetDate, [["sku", "fnsku", "shipment id", "cogs", "from date", "to date", "remainder", "next shipment id", "shipment list"]], { origin: "A1" });
-    XLSX.utils.sheet_add_aoa(newSheet, [["date", "sku", "fnsku", "type", "quantity", "disposition", "received shipment id", "transferred shipment id", "cogs"]], { origin: "A1" });
+    XLSX.utils.sheet_add_aoa(newSheet, [["date", "sku", "fnsku", "type", "quantity", "disposition", "transferred shipment id", "received shipment id", "cogs"]], { origin: "A1" });
     XLSX.utils.sheet_add_aoa(returnSheet, [["date", "sku", "fnsku", "shipment id", "sale_quantity", "total_inventory", "data", "listShipmentID",
         "listQuantityOfShipment", "receipts (total received quantity calculate from current shipment)", "transaction (total transaction calculate from current shipment)",
         "calculated inventory (inventory quantity on 08/06 according to calculation)", "actual inventory (inventory quantity on 08/06 according to actual)", "difference", "next shipment id"]], { origin: 'A1' })
@@ -589,8 +629,7 @@ GenerateFile = async () => {
     delete_cols(skuData, 0, 1)
     delete_cols(skuData, 4, 5)
     delete_cols(returnSheet, 0, 1)
-    delete_cols(returnSheet,3,5)
-    console.log("phat cuoi",returns);
+    delete_cols(returnSheet, 3, 5)
     XLSX.writeFile(workbook, 'final.xlsx');
 
 }
