@@ -99,15 +99,15 @@ class InventoryLedger {
     }
 }
 class Transaction {
-    constructor(date, sku, fnsku, type, quantity, disposition, shipmentID, shipment_recept, cogs) {
+    constructor(date, sku, fnsku, type, quantity, disposition,shipment_recept, shipmentID, cogs) {
         this.date = date;
         this.sku = sku;
         this.fnsku = fnsku;
         this.type = type;
         this.quantity = quantity;
         this.disposition = disposition;
-        this.shipmentID = shipmentID;
         this.shipment_recept = shipment_recept;
+        this.shipmentID = shipmentID;
         this.cogs = cogs;
     }
 }
@@ -158,8 +158,8 @@ function getListTransaction(inventoryLedger) {
                 type: event_type,
                 quantity: quantity,
                 disposition: disposition,
-                shipmentID: null,
                 shipment_recept: event_type === 'Receipts' ? referenceID : null,
+                shipmentID: null,
                 cogs: null
             });
         }
@@ -172,8 +172,8 @@ function getListTransaction(inventoryLedger) {
         t.type,
         t.quantity,
         t.disposition,
-        t.shipmentID,
         t.shipment_recept,
+        t.shipmentID,
         t.cogs
     ));
 }
@@ -205,6 +205,7 @@ let findFutureDate = async (skuData, transations) => {
     return skuData
 }
 const findDate = async (skuData, transactions) => {
+    console.log("transs", transactions);
     const cogs = [];
     for (let i = 0; i < skuData.length; i++) {
         const element = skuData[i];
@@ -269,15 +270,32 @@ const findDate = async (skuData, transactions) => {
                     }
                 }
             }
+        } else if (element.data === 0 && element.sku === 'OO-7IRG-7LLM') {
+            const matchingTransaction = transactions.slice().reverse().find(t => (t.sku === element.sku));
+            let index = transactions.indexOf(matchingTransaction)
+            console.log("data=0",index);
+            if (index) {
+                transactions[index].shipmentID = element.shipmentID
+                const d = new Date(matchingTransaction.date);
+                d.setFullYear(d.getFullYear() + 3);
+                cogs.push(new Cog(
+                    matchingTransaction.sku,
+                    element.fnsku,
+                    element.shipmentID,
+                    null,
+                    new Date(matchingTransaction.date),
+                    new Date(d),
+                    0,
+                    null,
+                    null
+                ));
+            }
         }
     }
     return [cogs, transactions];
 };
 
 const findNextDate = async (skuData, transactions, remainder) => {
-    if (skuData.sku === 'MN-6KST-82YI') {
-        console.log("skune", skuData, remainder);
-    }
 
     const cogs = [];
     const listTransactionOfSku = transactions.filter(t => t.sku === skuData.sku && t.type !== 'Receipts');
@@ -504,7 +522,7 @@ let writeCogs = async (url, finalDate, transactions, skus) => {
     for (var i = 0; i < finalDate.length; i++) {
         let cogDataRow = cogs.filter(c => c['Sku'] === finalDate[i].sku && c['Shipment ID'] === finalDate[i].current_shipment)[0]
         if (cogDataRow) {
-            finalDate[i].current_shipment_cog = cogDataRow['COGS']
+            finalDate[i].current_shipment_cog = parseFloat(cogDataRow['COGS']).toFixed(4)
         }
     }
     for (var i = 0; i < skus.length; i++) {
@@ -514,19 +532,29 @@ let writeCogs = async (url, finalDate, transactions, skus) => {
             for (var j = filterTrans.length - 1; j > 0; j--) {
                 let belowIndex = tmp.indexOf(filterTrans[j])
                 let upperIndex = tmp.indexOf(filterTrans[j - 1])
-                console.log(belowIndex, upperIndex);
                 let cogDataRow = cogs.filter(c => c['Sku'] === filterTrans[j].sku && c['Shipment ID'] === filterTrans[j].shipmentID)[0]
                 for (var k = upperIndex + 1; k <= belowIndex; k++) {
                     if (cogDataRow) {
-                        tmp[k].cogs = cogDataRow['COGS']
+                        console.log(tmp[k]);
+                        tmp[k].cogs = (parseFloat(cogDataRow['COGS']).toFixed(4) * tmp[k].quantity).toFixed(4)
                     }
                 }
             }
             let fistIndex = tmp.indexOf(filterTrans[0])
             let cogDataRow = cogs.filter(c => c['Sku'] === filterTrans[0].sku && c['Shipment ID'] === filterTrans[0].shipmentID)[0]
-            for(var j = 0;j<= fistIndex;j++){
+            for (var j = 0; j <= fistIndex; j++) {
+                if (cogDataRow) {
+                    tmp[j].cogs = (parseFloat(cogDataRow['COGS']).toFixed(4) * tmp[j].quantity).toFixed(4)
+                }
+            }
+        }
+        let filterTransRecept = transactions.filter(t => t.sku === skus[i].sku && t.type === 'Receipts')
+        if(filterTransRecept){
+            for(var j= 0 ; j< filterTransRecept.length ;j++){
+                console.log("cuano",filterTransRecept[j]);
+                let cogDataRow = cogs.filter(c => c['Sku'] === filterTransRecept[j].sku && c['Shipment ID'] === filterTransRecept[j].shipment_recept)[0]
                 if(cogDataRow){
-                    tmp[j].cogs = cogDataRow['COGS']
+                    filterTransRecept[j].cogs = (parseFloat(cogDataRow['COGS']).toFixed(4) * filterTransRecept[j].quantity).toFixed(4)
                 }
             }
         }
@@ -573,6 +601,7 @@ GenerateFile = async () => {
     })
 
     let transations = getListTransaction(inventoryLedger)
+    console.log("ahihiii", transations);
     let futureDate = await findFutureDate(skus, transations);
     let tmp = JSON.parse(JSON.stringify(futureDate));
     // const futureDataSheets = XLSX.utils.json_to_sheet(futureDate)
@@ -609,15 +638,15 @@ GenerateFile = async () => {
     workbook.SheetNames.splice(workbook.SheetNames.indexOf("Sheet1"), 1);
     delete workbook.Sheets["Sheet1"];
     // đổi tên sheet ngày chuyển giao, danh sách giao dịch bổ sung
-    workbook.SheetNames[workbook.SheetNames.indexOf("Ngày chuyển giao")] = "list shipment";
-    workbook.Sheets['list shipment'] = newSheetDate
+    workbook.SheetNames[workbook.SheetNames.indexOf("Ngày chuyển giao")] = "shipment list";
+    workbook.Sheets['shipment list'] = newSheetDate
     workbook.SheetNames[workbook.SheetNames.indexOf("Danh sách giao dịch bổ sung")] = "transaction list";
     workbook.Sheets['transaction list'] = newSheet
     workbook.SheetNames[workbook.SheetNames.indexOf("Giao dịch phát sinh")] = "original inventory statistics"
     workbook.Sheets['original inventory statistics'] = skuData
     // đổi tên các cột trong sheets ngày chuyển giao
     XLSX.utils.sheet_add_aoa(newSheetDate, [["sku", "fnsku", "shipment id", "cogs", "from date", "to date", "remainder", "next shipment id", "shipment list"]], { origin: "A1" });
-    XLSX.utils.sheet_add_aoa(newSheet, [["date", "sku", "fnsku", "type", "quantity", "disposition", "transferred shipment id", "received shipment id", "cogs"]], { origin: "A1" });
+    XLSX.utils.sheet_add_aoa(newSheet, [["date", "sku", "fnsku", "type", "quantity", "disposition", "received shipment id","transferred shipment id", "cogs"]], { origin: "A1" });
     XLSX.utils.sheet_add_aoa(returnSheet, [["date", "sku", "fnsku", "shipment id", "sale_quantity", "total_inventory", "data", "listShipmentID",
         "listQuantityOfShipment", "receipts (total received quantity calculate from current shipment)", "transaction (total transaction calculate from current shipment)",
         "calculated inventory (inventory quantity on 08/06 according to calculation)", "actual inventory (inventory quantity on 08/06 according to actual)", "difference", "next shipment id"]], { origin: 'A1' })

@@ -5,6 +5,7 @@ const workbook = XLSX.readFile('P&L.xlsx');
 const rm = XLSX.readFile("Removal Order Detail.xlsx")
 const il = XLSX.readFile("Inventory Ledger.xlsx")
 const { getJsDateFromExcel } = require("excel-date-to-js");
+const cogs = XLSX.readFile("final.xlsx")
 
 class Payment {
   constructor(date, settlementID, type, orderID, group, sku, description, quantity, market_place, account_type, fullfillment, order_city, order_state, order_postal, tax_collection,
@@ -92,6 +93,15 @@ class SurchargeFee {
     this.short_time_range_long_term_storage_fee = short_time_range_long_term_storage_fee
   }
 }
+class Transaction{
+  constructor(date, sku,type,quantity, cogs) {
+    this.date = date
+    this.sku = sku;
+    this.type= type;
+    this.quantity = quantity;
+    this.cogs = cogs
+  }
+}
 class InventoryLedger {
   constructor(date, fnsku, msku, quantity, disposition, event_type) {
     this.date = date;
@@ -121,7 +131,7 @@ class Result {
     regulatory_fee_tax, promotional_rebates, promotional_rebates_tax, marketplace_withheld_tax, referral_fees, fullfillment_fees, refund_commission, other_transaction_fee,
     other_adjustment, gross_profits, ads, storage_fee, disposal_fee, aged_inventory_surcharge, gross_profits_overall, mcf_quantity, lost_quantity_by_aw,
     adjusted_quantity_by_aw, removal_liquidations, removal_return, removal_disposal, customer_return_sellable,
-    customer_return_unsellable, sellable_return_percent) {
+    customer_return_unsellable, sellable_return_percent, cogs_shipped, cogs_return, cogs_lost, cogs_adjusted, cogs_removal, tcogs) {
     this.sku = sku;
     this.fnsku = fnsku;
     this.sale_quantity = sale_quantity;
@@ -160,6 +170,12 @@ class Result {
     this.customer_return_sellable = customer_return_sellable;
     this.customer_return_unsellable = customer_return_unsellable
     this.sellable_return_percent = sellable_return_percent;
+    this.cogs_shipped = cogs_shipped;
+    this.cogs_return = cogs_return;
+    this.cogs_lost = cogs_lost;
+    this.cogs_adjusted = cogs_adjusted;
+    this.cogs_removal = cogs_removal;
+    this.tcogs = tcogs;
   }
 }
 
@@ -466,7 +482,6 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
       }
     });
   });
-  console.log(customerReturn);
   customerReturn.forEach(c => {
     var startDate = parseDate("10/01/2022")
     var endDate = parseDate("11/01/2022")
@@ -532,6 +547,7 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
       }
     });
   })
+  
 
   return Object.values(skuData).map(sku => new Result(
     sku.sku,
@@ -575,7 +591,39 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
       sku.customer_return_sellable / (sku.customer_return_sellable + sku.customer_return_unsellable) * 100 + "%" : "0%"
   ));
 }
-function GenerateFile() {
+let findCogs= async(rs, cogs_data)=>{
+   rs.forEach(sku=>{
+    let skuData = cogs_data.filter(t => t.sku === sku.sku && (new Date(t.date) >= new Date("03/01/2023")) && (new Date(t.date) <= new Date("03/31/2023")))
+    if(skuData.length > 0){
+      sku.cogs_shipped =0;
+      sku.cogs_removal =0;
+      sku.cogs_adjusted =0;
+      sku.cogs_lost = 0;
+      sku.cogs_return =0;
+      sku.tcogs =0
+      for(var i=0;i< skuData.length ;i++){
+        if(skuData[i].type == 'Shipments' && skuData[i].cogs){
+          sku.cogs_shipped += parseFloat(skuData[i].cogs)
+        }
+        else if(skuData[i].type == "CustomerReturns"){
+          sku.cogs_return += parseFloat(skuData[i].cogs)
+        }
+        else if(skuData[i].type == "Adjustments"){
+          if(skuData[i].quantity < 0){
+            sku.cogs_lost += parseFloat(skuData[i].cogs)
+          }else if(skuData[i].quantity > 0){
+            sku.cogs_adjusted += parseFloat(skuData[i].cogs)
+          }
+        }else if(skuData[i].type=='VendorReturns'){
+          sku.cogs_removal += parseFloat(skuData[i].cogs)
+        }
+        sku.tcogs += (sku.cogs_shipped + sku.cogs_removal + sku.cogs_return + sku.cogs_lost + sku.cogs_adjusted )
+      }
+    }
+   })
+   return rs;
+}
+let GenerateFile= async () =>{
   const worksheet = workbook.Sheets["Payment T3"];
   const ws2 = workbook.Sheets["Cost of Goods"]
   const ws3 = workbook.Sheets["Ads Portfolio"]
@@ -585,6 +633,16 @@ function GenerateFile() {
   const ws7 = workbook.Sheets["Surcharge Fee T3"]
   const ws8 = rm.Sheets["Thành"]
   const ws9 = il.Sheets["Thành"]
+  const cogs_sheet = cogs.Sheets["transaction list"]
+  let cogs_data = XLSX.utils.sheet_to_json(cogs_sheet).map(row=>{
+    return new Transaction(
+      row['date'],
+      row['sku'],
+      row['type'],
+      row['quantity'],
+      row['cogs']
+    )
+  })
 
   // Use XLSX.utils.sheet_to_json() to convert the worksheet to a JSON array
   const jsonArray = XLSX.utils.sheet_to_json(worksheet);
@@ -714,6 +772,8 @@ function GenerateFile() {
 
   let rs = getSKUData(payments, costOfGods, adsPortfolio, adsT3, storageFee, surChargeFee, adjustment,
     customerReturn);
+  let final= await findCogs(rs, cogs_data)
+  console.log(final);
   // console.log(rs);
   // for (let i = 0; i < rs.length; i++) {
   //   let obj = rs[i];
@@ -815,7 +875,7 @@ function GenerateFile() {
   //  // console.log(rs);
   // }
   const newWorksheet = XLSX.utils.json_to_sheet(rs);
-  XLSX.utils.book_append_sheet(workbook, newWorksheet, "File hoan thanh");
+  XLSX.utils.book_append_sheet(workbook, newWorksheet, "Thành T3");
   XLSX.writeFile(workbook, 'data.xlsx');
 }
 
