@@ -94,11 +94,12 @@ class SurchargeFee {
   }
 }
 class Transaction{
-  constructor(date, sku,type,quantity, cogs) {
+  constructor(date, sku,type,quantity, disposition,cogs) {
     this.date = date
     this.sku = sku;
     this.type= type;
     this.quantity = quantity;
+    this.disposition = disposition;
     this.cogs = cogs
   }
 }
@@ -593,32 +594,32 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
 }
 let findCogs= async(rs, cogs_data)=>{
    rs.forEach(sku=>{
-    let skuData = cogs_data.filter(t => t.sku === sku.sku && (new Date(t.date) >= new Date("03/01/2023")) && (new Date(t.date) <= new Date("03/31/2023")))
+    let skuData = cogs_data.filter(t => t.sku === sku.sku && (new Date(t.date) >= new Date("03/01/2023")) && (new Date(t.date) < new Date("04/01/2023")) && t.disposition=="SELLABLE")
     if(skuData.length > 0){
       sku.cogs_shipped =0;
       sku.cogs_removal =0;
       sku.cogs_adjusted =0;
       sku.cogs_lost = 0;
       sku.cogs_return =0;
-      sku.tcogs =0
       for(var i=0;i< skuData.length ;i++){
-        if(skuData[i].type == 'Shipments' && skuData[i].cogs){
-          sku.cogs_shipped += parseFloat(skuData[i].cogs)
+        if(skuData[i].type == 'Shipments' && skuData[i].cogs != undefined){
+          sku.cogs_shipped += parseFloat(skuData[i].cogs)      
         }
-        else if(skuData[i].type == "CustomerReturns"){
+        else if(skuData[i].type == "CustomerReturns" && skuData[i].cogs != undefined){
           sku.cogs_return += parseFloat(skuData[i].cogs)
         }
-        else if(skuData[i].type == "Adjustments"){
+        else if(skuData[i].type == "Adjustments" && skuData[i].cogs != undefined){
           if(skuData[i].quantity < 0){
             sku.cogs_lost += parseFloat(skuData[i].cogs)
           }else if(skuData[i].quantity > 0){
             sku.cogs_adjusted += parseFloat(skuData[i].cogs)
           }
-        }else if(skuData[i].type=='VendorReturns'){
+        }else if(skuData[i].type=='VendorReturns' && skuData[i].cogs != undefined){
           sku.cogs_removal += parseFloat(skuData[i].cogs)
         }
-        sku.tcogs += (sku.cogs_shipped + sku.cogs_removal + sku.cogs_return + sku.cogs_lost + sku.cogs_adjusted )
       }
+      sku.tcogs = parseFloat(sku.cogs_shipped) + parseFloat(sku.cogs_removal) + 
+        parseFloat(sku.cogs_return) + parseFloat(sku.cogs_lost)+ parseFloat(sku.cogs_adjusted)
     }
    })
    return rs;
@@ -640,6 +641,7 @@ let GenerateFile= async () =>{
       row['sku'],
       row['type'],
       row['quantity'],
+      row['disposition'],
       row['cogs']
     )
   })
@@ -773,7 +775,6 @@ let GenerateFile= async () =>{
   let rs = getSKUData(payments, costOfGods, adsPortfolio, adsT3, storageFee, surChargeFee, adjustment,
     customerReturn);
   let final= await findCogs(rs, cogs_data)
-  console.log(final);
   // console.log(rs);
   // for (let i = 0; i < rs.length; i++) {
   //   let obj = rs[i];
@@ -874,7 +875,7 @@ let GenerateFile= async () =>{
   //   }
   //  // console.log(rs);
   // }
-  const newWorksheet = XLSX.utils.json_to_sheet(rs);
+  const newWorksheet = XLSX.utils.json_to_sheet(final);
   XLSX.utils.book_append_sheet(workbook, newWorksheet, "Thành T3");
   XLSX.writeFile(workbook, 'data.xlsx');
 }
