@@ -2,11 +2,16 @@ const moment = require('moment/moment');
 const XLSX = require('xlsx');
 
 const workbook = XLSX.readFile('P&L.xlsx');
+const wb_payment = XLSX.readFile('Payment-T3.xlsx')
+const wb_inventory_ledger = XLSX.readFile('Inventory-Ledger-t3.xlsx')
+const wb_removal = XLSX.readFile('Removal-Fee-T3.xlsx')
+const wb_storage_fee = XLSX.readFile('Storage-Fee-T3.xlsx')
+const wb_surcharge = XLSX.readFile('Surcharge-Fee-T3.xlsx')
 const rm = XLSX.readFile("Removal Order Detail.xlsx")
 const il = XLSX.readFile("Inventory Ledger.xlsx")
 const { getJsDateFromExcel } = require("excel-date-to-js");
 const cogs = XLSX.readFile("final.xlsx")
-
+const axios = require('axios')
 class Payment {
   constructor(date, settlementID, type, orderID, group, sku, description, quantity, market_place, account_type, fullfillment, order_city, order_state, order_postal, tax_collection,
     product_sales, product_sales_tax, shipping_credits, shipping_credit_tax, gift_wrap_credits, gift_wrap_credits_tax, regulatory_fee, regulatory_fee_tax, promotional_rebates,
@@ -46,14 +51,11 @@ class Payment {
 }
 
 class CostOfGods {
-  constructor(sku, fnsku, product_group, tags, from_date, to_date, total_amount) {
+  constructor(sku, fnsku, total_amount, portfolio) {
     this.sku = sku;
     this.fnsku = fnsku;
-    this.product_group = product_group;
-    this.tags = tags;
-    this.from_date = from_date;
-    this.to_date = to_date;
     this.total_amount = total_amount;
+    this.portfolio = portfolio
   }
 }
 class AdsPortfolio {
@@ -93,11 +95,11 @@ class SurchargeFee {
     this.short_time_range_long_term_storage_fee = short_time_range_long_term_storage_fee
   }
 }
-class Transaction{
-  constructor(date, sku,type,quantity, disposition,cogs) {
+class Transaction {
+  constructor(date, sku, type, quantity, disposition, cogs) {
     this.date = date
     this.sku = sku;
-    this.type= type;
+    this.type = type;
     this.quantity = quantity;
     this.disposition = disposition;
     this.cogs = cogs
@@ -126,11 +128,17 @@ class CustomerReturn {
     this.removal_fee = removal_fee;
   }
 }
+class Ads {
+  constructor(sku, spend) {
+    this.sku = sku;
+    this.spend = spend;
+  }
+}
 class Result {
   constructor(sku, fnsku, sale_quantity, refund_quantity, product_sales, refund_amount, liquidations, gross_sales,
     product_sales_tax, shipping_credits, shipping_credit_tax, gift_wrap_credits, gift_wrap_credits_tax, regulatory_fee,
     regulatory_fee_tax, promotional_rebates, promotional_rebates_tax, marketplace_withheld_tax, referral_fees, fullfillment_fees, refund_commission, other_transaction_fee,
-    other_adjustment, gross_profits, ads, storage_fee, disposal_fee, aged_inventory_surcharge, gross_profits_overall, mcf_quantity, lost_quantity_by_aw,
+    other_adjustment, gross_profits, subscription, ads, storage_fee, disposal_fee, vine_fee, aged_inventory_surcharge, gross_profits_overall, mcf_quantity, lost_quantity_by_aw,
     adjusted_quantity_by_aw, removal_liquidations, removal_return, removal_disposal, customer_return_sellable,
     customer_return_unsellable, sellable_return_percent, cogs_shipped, cogs_return, cogs_lost, cogs_adjusted, cogs_removal, tcogs) {
     this.sku = sku;
@@ -157,9 +165,11 @@ class Result {
     this.other_transaction_fee = other_transaction_fee;
     this.other_adjustment = other_adjustment;
     this.gross_profits = gross_profits;
+    this.subscription = subscription
     this.ads = ads;
     this.storage_fee = storage_fee;
     this.disposal_fee = disposal_fee;
+    this.vine_fee = vine_fee
     this.aged_inventory_surcharge = aged_inventory_surcharge;
     this.gross_profits_overall = gross_profits_overall;
     this.mcf_quantity = mcf_quantity;
@@ -180,9 +190,55 @@ class Result {
   }
 }
 
-function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, surChargeFee, adjustment,
+function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product, storageFee, surChargeFee, adjustment,
   customerReturn) {
   const skuData = {};
+  costOfGods.forEach(skuInfo => {
+    const { sku, fnsku } = skuInfo;
+    if (!skuData[sku]) {
+      skuData[sku] = {
+        sku, fnsku,
+        sale_quantity: 0,
+        refund_quantity: 0,
+        product_sales_order: 0,
+        product_sales_refund: 0,
+        liquidations: 0,
+        gross_sales: 0,
+        product_sales_tax: 0,
+        shipping_credits: 0,
+        shipping_credit_tax: 0,
+        gift_wrap_credits: 0,
+        gift_wrap_credits_tax: 0,
+        regulatory_fee: 0,
+        regulatory_fee_tax: 0,
+        promotional_rebates: 0,
+        promotional_rebates_tax: 0,
+        marketplace_withheld_tax: 0,
+        referral_fees: 0,
+        fullfillment_fees: 0,
+        refund_commission: 0,
+        other_transaction_fee: 0,
+        other: 0,
+        gross_profits: 0,
+        subscription: 0,
+        ads: 0,
+        storage_fee: 0,
+        disposal_fee: 0,
+        vine_fee: 0,
+        aged_inventory_surcharge: 0,
+        gross_profits_overall: 0,
+        mcf_quantity: 0,
+        lost_quantity_by_aw: 0,
+        adjusted_quantity_by_aw: 0,
+        removal_liquidations: 0,
+        removal_return: 0,
+        removal_disposal: 0,
+        customer_return_sellable: 0,
+        customer_return_unsellable: 0,
+        sellable_return_percent: 0
+      }
+    }
+  });
   paymentList.forEach(payment => {
     const { sku, type, quantity, product_sales, product_sales_tax, shipping_credits, shipping_credit_tax,
       gift_wrap_credits, gift_wrap_credits_tax, regulatory_fee, regulatory_fee_tax, promotional_rebates,
@@ -213,8 +269,11 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
         other_transaction_fee: 0,
         other: 0,
         gross_profits: 0,
+        subscription: 0,
+        ads:0,
         storage_fee: 0,
         disposal_fee: 0,
+        vine_fee: 0,
         aged_inventory_surcharge: 0,
         gross_profits_overall: 0,
         mcf_quantity: 0,
@@ -263,23 +322,27 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
     skuData[sku].gross_profits += total;
   });
 
-  costOfGods.forEach(skuInfo => {
-    const { sku, fnsku } = skuInfo;
-    if (skuData[sku]) {
-      skuData[sku].fnsku = fnsku;
-    }
-  });
-  adsPortfolio.forEach(ads => {
+  costOfGods.forEach(ads => {
     const { sku, portfolio } = ads;
-    if (skuData[sku]) {
-      adsT3.forEach(ad => {
-        if (ad.portfolio === portfolio) {
-          skuData[sku].ads = parseFloat(ad.spend).toFixed(3)
+    if(skuData[sku]){
+      ads_brand.forEach(ad => {
+        if (ad.portfolio == portfolio?.replace(/\r/g, "")) {
+          skuData[sku].ads += parseFloat(ad.spend)
+          console.log(skuData[sku].ads);
         }
       });
+      ads_display.forEach(ads=>{
+        if( sku === ads.sku){
+          skuData[sku].ads += ads.spend;
+        }
+      })
+      ads_product.forEach(ads=>{
+        if( sku === ads.sku){
+          skuData[sku].ads += ads.spend;
+        }
+      })
     }
   });
-
   // removalFee.forEach(r => {
   //   const { sku, removal_fee, order_type } = r;
   //   if (skuData[sku]) {
@@ -319,8 +382,10 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
             other_transaction_fee: 0,
             other: 0,
             gross_profits: 0,
+            subscription: 0,
             storage_fee: 0,
             disposal_fee: 0,
+            vine_fee: 0,
             aged_inventory_surcharge: 0,
             gross_profits_overall: 0,
             mcf_quantity: 0,
@@ -338,7 +403,6 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
     });
     Object.values(skuData).forEach(v => {
       if (s.fnsku === v.fnsku) {
-        console.log("surcharge fee", s);
         v.aged_inventory_surcharge += s.short_time_range_long_term_storage_fee;
       }
     });
@@ -378,9 +442,11 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
             other_transaction_fee: 0,
             other: 0,
             gross_profits: 0,
+            subscription: 0,
             storage_fee: 0,
             disposal_fee: 0,
             aged_inventory_surcharge: 0,
+            vine_fee: 0,
             gross_profits_overall: 0,
             mcf_quantity: 0,
             lost_quantity_by_aw: 0,
@@ -417,7 +483,7 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
   adjustment.forEach(a => {
     var startDate = parseDate("03/01/2023")
     var endDate = parseDate("03/31/2023")
-    var aDate = a.date.length >7 ? parseDate(a.date) : parseDate(getJsDateFromExcel(a.date).getDate()+"/"+Number(getJsDateFromExcel(a.date).getMonth()+1)+"/"+getJsDateFromExcel(a.date).getFullYear())
+    var aDate = a.date.length > 7 ? parseDate(a.date) : parseDate(getJsDateFromExcel(a.date).getDate() + "/" + Number(getJsDateFromExcel(a.date).getMonth() + 1) + "/" + getJsDateFromExcel(a.date).getFullYear())
     costOfGods.forEach(skuInfo => {
       const { sku, fnsku } = skuInfo;
       if (a.fnsku === fnsku) {
@@ -447,6 +513,7 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
             other_transaction_fee: 0,
             other: 0,
             gross_profits: 0,
+            subscription: 0,
             storage_fee: 0,
             disposal_fee: 0,
             aged_inventory_surcharge: 0,
@@ -474,9 +541,9 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
           v.adjusted_quantity_by_aw += a.quantity;
         }
         if (a.msku === v.sku && a.event_type === "CustomerReturns") {
-          if(a.disposition === "SELLABLE"){
+          if (a.disposition === "SELLABLE") {
             v.customer_return_sellable += a.quantity;
-          }else{
+          } else {
             v.customer_return_unsellable += a.quantity;
           }
         }
@@ -484,52 +551,54 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
     });
   });
   customerReturn.forEach(c => {
-    var startDate = parseDate("10/01/2022")
-    var endDate = parseDate("11/01/2022")
-    var aDate = c.date.length >7 ? parseDate(c.date.substring(0, 10)) : parseDate(getJsDateFromExcel(c.date).getDate()+"/"+Number(getJsDateFromExcel(c.date).getMonth()+1)+"/"+getJsDateFromExcel(c.date).getFullYear())
+    var startDate = parseDate("03/01/2023")
+    var endDate = parseDate("03/31/2023")
+    var aDate = c.date.length > 7 ? parseDate(c.date.substring(0, 10)) : parseDate(getJsDateFromExcel(c.date).getDate() + "/" + Number(getJsDateFromExcel(c.date).getMonth() + 1) + "/" + getJsDateFromExcel(c.date).getFullYear())
     costOfGods.forEach(skuInfo => {
       const { sku, fnsku } = skuInfo;
-        if (!skuData[sku]) {
-          skuData[sku] = {
-            sku,
-            fnsku,
-            sale_quantity: 0,
-            refund_quantity: 0,
-            product_sales_order: 0,
-            product_sales_refund: 0,
-            liquidations: 0,
-            gross_sales: 0,
-            product_sales_tax: 0,
-            shipping_credits: 0,
-            shipping_credit_tax: 0,
-            gift_wrap_credits: 0,
-            gift_wrap_credits_tax: 0,
-            regulatory_fee: 0,
-            regulatory_fee_tax: 0,
-            promotional_rebates: 0,
-            promotional_rebates_tax: 0,
-            marketplace_withheld_tax: 0,
-            referral_fees: 0,
-            fullfillment_fees: 0,
-            refund_commission: 0,
-            other_transaction_fee: 0,
-            other: 0,
-            gross_profits: 0,
-            storage_fee: 0,
-            disposal_fee: 0,
-            aged_inventory_surcharge: 0,
-            gross_profits_overall: 0,
-            mcf_quantity: 0,
-            lost_quantity_by_aw: 0,
-            adjusted_quantity_by_aw: 0,
-            removal_liquidations: 0,
-            removal_return: 0,
-            removal_disposal: 0,
-            customer_return_sellable: 0,
-            customer_return_unsellable: 0,
-            sellable_return_percent: 0
-          };
-        }
+      if (!skuData[sku]) {
+        skuData[sku] = {
+          sku,
+          fnsku,
+          sale_quantity: 0,
+          refund_quantity: 0,
+          product_sales_order: 0,
+          product_sales_refund: 0,
+          liquidations: 0,
+          gross_sales: 0,
+          product_sales_tax: 0,
+          shipping_credits: 0,
+          shipping_credit_tax: 0,
+          gift_wrap_credits: 0,
+          gift_wrap_credits_tax: 0,
+          regulatory_fee: 0,
+          regulatory_fee_tax: 0,
+          promotional_rebates: 0,
+          promotional_rebates_tax: 0,
+          marketplace_withheld_tax: 0,
+          referral_fees: 0,
+          fullfillment_fees: 0,
+          refund_commission: 0,
+          other_transaction_fee: 0,
+          other: 0,
+          gross_profits: 0,
+          subscription: 0,
+          storage_fee: 0,
+          disposal_fee: 0,
+          vine_fee: 0,
+          aged_inventory_surcharge: 0,
+          gross_profits_overall: 0,
+          mcf_quantity: 0,
+          lost_quantity_by_aw: 0,
+          adjusted_quantity_by_aw: 0,
+          removal_liquidations: 0,
+          removal_return: 0,
+          removal_disposal: 0,
+          customer_return_sellable: 0,
+          customer_return_unsellable: 0,
+          sellable_return_percent: 0
+        };
+      }
     })
     const { order_status, disposition, shipped_quantity, disposed_quantity, sku, order_type, date, removal_fee } = c;
     Object.values(skuData).forEach(v => {
@@ -539,16 +608,15 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
             v.removal_liquidations += shipped_quantity
           }
           if (order_type === 'Return') {
-            console.log("return ne", c);
             v.removal_return += shipped_quantity
           }
-          v.removal_disposal += disposed_quantity != undefined ? disposed_quantity :0
+          v.removal_disposal += disposed_quantity != undefined ? disposed_quantity : 0
         }
         v.disposal_fee += removal_fee != undefined ? removal_fee : 0;
       }
     });
   })
-  
+
 
   return Object.values(skuData).map(sku => new Result(
     sku.sku,
@@ -575,11 +643,13 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
     sku.other_transaction_fee,
     sku.other,
     sku.gross_profits,
-    sku.ads ? Number(sku.ads) : null,
-    sku.storage_fee,
-    sku.disposal_fee,
-    sku.aged_inventory_surcharge,
-    sku.gross_profits + sku.aged_inventory_surcharge,
+    -sku.subscription,
+    sku.ads ? Number(-sku.ads) : null,
+    -sku.storage_fee,
+    -sku.disposal_fee,
+    -sku.vine_fee,
+    -sku.aged_inventory_surcharge,
+    sku.gross_profits - (sku.subscription + Number(sku.ads ? sku.ads : 0) + sku.storage_fee + sku.disposal_fee + sku.vine_fee + sku.aged_inventory_surcharge),
     sku.mcf_quantity,
     sku.lost_quantity_by_aw,
     sku.adjusted_quantity_by_aw,
@@ -592,50 +662,89 @@ function getSKUData(paymentList, costOfGods, adsPortfolio, adsT3, storageFee, su
       sku.customer_return_sellable / (sku.customer_return_sellable + sku.customer_return_unsellable) * 100 + "%" : "0%"
   ));
 }
-let findCogs= async(rs, cogs_data)=>{
-   rs.forEach(sku=>{
-    let skuData = cogs_data.filter(t => t.sku === sku.sku && (new Date(t.date) >= new Date("03/01/2023")) && (new Date(t.date) < new Date("04/01/2023")) && t.disposition=="SELLABLE")
-    if(skuData.length > 0){
-      sku.cogs_shipped =0;
-      sku.cogs_removal =0;
-      sku.cogs_adjusted =0;
+let findCogs = async (rs, cogs_data) => {
+  rs.forEach(sku => {
+    let skuData = cogs_data.filter(t => t.sku === sku.sku && (new Date(t.date) >= new Date("03/01/2023")) && (new Date(t.date) < new Date("04/01/2023")) && t.disposition == "SELLABLE")
+    if (skuData.length > 0) {
+      sku.cogs_shipped = 0;
+      sku.cogs_removal = 0;
+      sku.cogs_adjusted = 0;
       sku.cogs_lost = 0;
-      sku.cogs_return =0;
-      for(var i=0;i< skuData.length ;i++){
-        if(skuData[i].type == 'Shipments' && skuData[i].cogs != undefined){
-          sku.cogs_shipped += parseFloat(skuData[i].cogs)      
+      sku.cogs_return = 0;
+      for (var i = 0; i < skuData.length; i++) {
+        if (skuData[i].type == 'Shipments' && skuData[i].cogs != undefined) {
+          sku.cogs_shipped += parseFloat(skuData[i].cogs)
         }
-        else if(skuData[i].type == "CustomerReturns" && skuData[i].cogs != undefined){
+        else if (skuData[i].type == "CustomerReturns" && skuData[i].cogs != undefined) {
           sku.cogs_return += parseFloat(skuData[i].cogs)
         }
-        else if(skuData[i].type == "Adjustments" && skuData[i].cogs != undefined){
-          if(skuData[i].quantity < 0){
+        else if (skuData[i].type == "Adjustments" && skuData[i].cogs != undefined) {
+          if (skuData[i].quantity < 0) {
             sku.cogs_lost += parseFloat(skuData[i].cogs)
-          }else if(skuData[i].quantity > 0){
+          } else if (skuData[i].quantity > 0) {
             sku.cogs_adjusted += parseFloat(skuData[i].cogs)
           }
-        }else if(skuData[i].type=='VendorReturns' && skuData[i].cogs != undefined){
+        } else if (skuData[i].type == 'VendorReturns' && skuData[i].cogs != undefined) {
           sku.cogs_removal += parseFloat(skuData[i].cogs)
         }
       }
-      sku.tcogs = parseFloat(sku.cogs_shipped) + parseFloat(sku.cogs_removal) + 
-        parseFloat(sku.cogs_return) + parseFloat(sku.cogs_lost)+ parseFloat(sku.cogs_adjusted)
+      sku.tcogs = parseFloat(sku.cogs_shipped) + parseFloat(sku.cogs_removal) +
+        parseFloat(sku.cogs_return) + parseFloat(sku.cogs_lost) + parseFloat(sku.cogs_adjusted)
     }
-   })
-   return rs;
+  })
+  return rs;
 }
-let GenerateFile= async () =>{
-  const worksheet = workbook.Sheets["Payment T3"];
-  const ws2 = workbook.Sheets["Cost of Goods"]
+let GenerateFile = async () => {
+  const worksheet = wb_payment.Sheets["Payment T3"];
   const ws3 = workbook.Sheets["Ads Portfolio"]
   const ws4 = workbook.Sheets["Ads T3"]
-  const ws5 = workbook.Sheets["Storage Fee T3"]
-  const ws6 = workbook.Sheets["Removal Fee T3"]
-  const ws7 = workbook.Sheets["Surcharge Fee T3"]
+  const ws5 = wb_storage_fee.Sheets["Storage Fee T3"]
+  const ws6 = wb_removal.Sheets["Removal Fee T3"]
+  const ws7 = wb_surcharge.Sheets["Surcharge Fee T3"]
   const ws8 = rm.Sheets["Thành"]
-  const ws9 = il.Sheets["Thành"]
+  const ws9 = wb_inventory_ledger.Sheets["Inventory Ledger T3"]
   const cogs_sheet = cogs.Sheets["transaction list"]
-  let cogs_data = XLSX.utils.sheet_to_json(cogs_sheet).map(row=>{
+  // handle ads
+  const wb_ads_product = XLSX.readFile('ads_prodduct.xlsx')
+  const wb_ads_display = XLSX.readFile('ads_display.xlsx')
+  const wb_ads_brand = XLSX.readFile('ads_brand.xlsx')
+  let ads_product = []
+  ads_product = XLSX.utils.sheet_to_json(wb_ads_product.Sheets['Sponsored Product Advertised Pr']).map(row => {
+    return new Ads(
+      row['Advertised SKU'],
+      row['Spend']
+    )
+  })
+  let ads_display = []
+  ads_display = XLSX.utils.sheet_to_json(wb_ads_display.Sheets['Sponsored Display Advertised Pr']).map(r => {
+    return new Ads(
+      r['Advertised SKU'],
+      r['Spend']
+    )
+  })
+  let ads_brand = []
+  ads_brand = XLSX.utils.sheet_to_json(wb_ads_brand.Sheets['Sponsored Brands Campaign Repor']).map(r => {
+    return new AdsT3(
+      r['Portfolio name'],
+      r['Spend']
+    )
+  })
+
+  const cogs_fixed = await axios.get("https://dl.dropboxusercontent.com/scl/fi/rtlsuqthkunvzp2ga8epp/COGS.xlsx?rlkey=peh76yk28t1lmuwiz2f7b5j6n&dl=1", { responseType: "arraybuffer" });
+  const cog_wb = XLSX.read(cogs_fixed.data);
+  const arr2 = XLSX.utils.sheet_to_json(cog_wb.Sheets["Product List"])
+  let costOfGods = []
+  costOfGods = arr2.map((row) => {
+    return new CostOfGods(
+      row['SKU'],
+      row['FNSKU'],
+      row['Price'],
+      row['Portfolio']
+    );
+  });
+
+
+  let cogs_data = XLSX.utils.sheet_to_json(cogs_sheet).map(row => {
     return new Transaction(
       row['date'],
       row['sku'],
@@ -685,19 +794,6 @@ let GenerateFile= async () =>{
     );
   });
 
-  const arr2 = XLSX.utils.sheet_to_json(ws2);
-  let costOfGods = []
-  costOfGods = arr2.map((row) => {
-    return new CostOfGods(
-      row['Sku'],
-      row['Fnsku'],
-      row['Product Group'],
-      row['Tags'],
-      row['From Date'],
-      row['To Date'],
-      row['Total Amount']
-    );
-  });
 
   const arr3 = XLSX.utils.sheet_to_json(ws3);
   let adsPortfolio = arr3.map((row) => {
@@ -757,7 +853,7 @@ let GenerateFile= async () =>{
     )
   })
 
-  const arr9 = XLSX.utils.sheet_to_json(ws8);
+  const arr9 = XLSX.utils.sheet_to_json(ws6);
   let customerReturn = arr9.map((row) => {
     return new CustomerReturn(
       row['request-date'],
@@ -772,10 +868,10 @@ let GenerateFile= async () =>{
     )
   })
 
-  let rs = getSKUData(payments, costOfGods, adsPortfolio, adsT3, storageFee, surChargeFee, adjustment,
+  let rs = getSKUData(payments, costOfGods, ads_brand, ads_display, ads_product, storageFee, surChargeFee, adjustment,
     customerReturn);
-  let final= await findCogs(rs, cogs_data)
-  // console.log(rs);
+  let final = await findCogs(rs, cogs_data)
+  console.log(final[final.length-1]);
   // for (let i = 0; i < rs.length; i++) {
   //   let obj = rs[i];
   //   let sale_quantity = obj.sale_quantity;
