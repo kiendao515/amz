@@ -2,9 +2,9 @@ const moment = require('moment/moment');
 const XLSX = require('xlsx');
 
 const workbook = XLSX.readFile('P&L.xlsx');
-const wb_payment = XLSX.readFile('Payment-T3.xlsx')
-const wb_inventory_ledger = XLSX.readFile('Inventory-Ledger-t3.xlsx')
-const wb_removal = XLSX.readFile('Removal-Fee-T3.xlsx')
+const wb_payment = XLSX.readFile('Payment-01.01.22-31.07.23.xlsx')
+const wb_inventory_ledger = XLSX.readFile('Inventory-Ledger-01.02.22-31.07.23.xlsx')
+const wb_removal = XLSX.readFile('Removal-Fee-01.02.22-31.07.23.xlsx')
 const wb_storage_fee = XLSX.readFile('Storage-Fee-T3.xlsx')
 const wb_surcharge = XLSX.readFile('Surcharge-Fee-T3.xlsx')
 const rm = XLSX.readFile("Removal Order Detail.xlsx")
@@ -116,8 +116,9 @@ class InventoryLedger {
   }
 }
 class CustomerReturn {
-  constructor(date, sku, fnsku, dispotition, order_type, order_status, shipped_quantity, disposed_quantity, removal_fee) {
+  constructor(date, last_updated_date, sku, fnsku, dispotition, order_type, order_status, shipped_quantity, disposed_quantity, removal_fee) {
     this.date = date;
+    this.last_updated_date = last_updated_date
     this.sku = sku;
     this.fnsku = fnsku;
     this.disposition = dispotition;
@@ -240,104 +241,107 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
     }
   });
   paymentList.forEach(payment => {
-    const { sku, type, quantity, product_sales, product_sales_tax, shipping_credits, shipping_credit_tax,
-      gift_wrap_credits, gift_wrap_credits_tax, regulatory_fee, regulatory_fee_tax, promotional_rebates,
-      promotional_rebates_tax, marketplace_withheld_tax, selling_fee, fba_fee, other_transaction_fee, other,
-      total, market_place, description } = payment;
-    if (!skuData[sku]) {
-      skuData[sku] = {
-        sku,
-        sale_quantity: 0,
-        refund_quantity: 0,
-        product_sales_order: 0,
-        product_sales_refund: 0,
-        liquidations: 0,
-        gross_sales: 0,
-        product_sales_tax: 0,
-        shipping_credits: 0,
-        shipping_credit_tax: 0,
-        gift_wrap_credits: 0,
-        gift_wrap_credits_tax: 0,
-        regulatory_fee: 0,
-        regulatory_fee_tax: 0,
-        promotional_rebates: 0,
-        promotional_rebates_tax: 0,
-        marketplace_withheld_tax: 0,
-        referral_fees: 0,
-        fullfillment_fees: 0,
-        refund_commission: 0,
-        other_transaction_fee: 0,
-        other: 0,
-        gross_profits: 0,
-        subscription: 0,
-        ads:0,
-        storage_fee: 0,
-        disposal_fee: 0,
-        vine_fee: 0,
-        aged_inventory_surcharge: 0,
-        gross_profits_overall: 0,
-        mcf_quantity: 0,
-        lost_quantity_by_aw: 0,
-        adjusted_quantity_by_aw: 0,
-        removal_liquidations: 0,
-        removal_return: 0,
-        removal_disposal: 0,
-        customer_return_sellable: 0,
-        customer_return_unsellable: 0,
-        sellable_return_percent: 0
-      };
+    if (new Date("03/01/2023") <= new Date(payment.date.includes("PDT")? payment.date.replace(" PDT", ""):payment.date.replace(" PST", "")) && 
+    new Date(payment.date.includes("PDT")? payment.date.replace(" PDT", ""):payment.date.replace(" PST", "")) < new Date("04/01/2023")) {
+      const { sku, type, quantity, product_sales, product_sales_tax, shipping_credits, shipping_credit_tax,
+        gift_wrap_credits, gift_wrap_credits_tax, regulatory_fee, regulatory_fee_tax, promotional_rebates,
+        promotional_rebates_tax, marketplace_withheld_tax, selling_fee, fba_fee, other_transaction_fee, other,
+        total, market_place, description } = payment;
+      if (!skuData[sku]) {
+        skuData[sku] = {
+          sku,
+          sale_quantity: 0,
+          refund_quantity: 0,
+          product_sales_order: 0,
+          product_sales_refund: 0,
+          liquidations: 0,
+          gross_sales: 0,
+          product_sales_tax: 0,
+          shipping_credits: 0,
+          shipping_credit_tax: 0,
+          gift_wrap_credits: 0,
+          gift_wrap_credits_tax: 0,
+          regulatory_fee: 0,
+          regulatory_fee_tax: 0,
+          promotional_rebates: 0,
+          promotional_rebates_tax: 0,
+          marketplace_withheld_tax: 0,
+          referral_fees: 0,
+          fullfillment_fees: 0,
+          refund_commission: 0,
+          other_transaction_fee: 0,
+          other: 0,
+          gross_profits: 0,
+          subscription: 0,
+          ads: 0,
+          storage_fee: 0,
+          disposal_fee: 0,
+          vine_fee: 0,
+          aged_inventory_surcharge: 0,
+          gross_profits_overall: 0,
+          mcf_quantity: 0,
+          lost_quantity_by_aw: 0,
+          adjusted_quantity_by_aw: 0,
+          removal_liquidations: 0,
+          removal_return: 0,
+          removal_disposal: 0,
+          customer_return_sellable: 0,
+          customer_return_unsellable: 0,
+          sellable_return_percent: 0
+        };
+      }
+      if (type === 'Order') {
+        skuData[sku].sale_quantity += quantity;
+        skuData[sku].product_sales_order += product_sales;
+        skuData[sku].gross_sales += product_sales;
+        skuData[sku].referral_fees += selling_fee;
+      }
+      if (type === 'Refund') {
+        skuData[sku].refund_quantity += quantity;
+        skuData[sku].product_sales_refund += product_sales;
+        skuData[sku].gross_sales += product_sales;
+        skuData[sku].refund_commission += selling_fee;
+      }
+      if (type === 'Liquidations') {
+        skuData[sku].liquidations += product_sales;
+        skuData[sku].gross_sales += product_sales
+      }
+      if (market_place?.slice(0, 3) === "sim" || market_place?.slice(1, 4) === "sim") {
+        skuData[sku].mcf_quantity += quantity
+      }
+      skuData[sku].product_sales_tax += product_sales_tax;
+      skuData[sku].shipping_credits += shipping_credits;
+      skuData[sku].shipping_credit_tax += shipping_credit_tax;
+      skuData[sku].gift_wrap_credits += gift_wrap_credits;
+      skuData[sku].gift_wrap_credits_tax += gift_wrap_credits_tax;
+      skuData[sku].regulatory_fee += regulatory_fee;
+      skuData[sku].regulatory_fee_tax += regulatory_fee_tax;
+      skuData[sku].promotional_rebates += promotional_rebates;
+      skuData[sku].promotional_rebates_tax += promotional_rebates_tax;
+      skuData[sku].marketplace_withheld_tax += marketplace_withheld_tax;
+      skuData[sku].fullfillment_fees += fba_fee;
+      skuData[sku].other_transaction_fee += other_transaction_fee;
+      skuData[sku].other += other;
+      skuData[sku].gross_profits += total;
     }
-    if (type === 'Order') {
-      skuData[sku].sale_quantity += quantity;
-      skuData[sku].product_sales_order += product_sales;
-      skuData[sku].gross_sales += product_sales;
-      skuData[sku].referral_fees += selling_fee;
-    }
-    if (type === 'Refund') {
-      skuData[sku].refund_quantity += quantity;
-      skuData[sku].product_sales_refund += product_sales;
-      skuData[sku].gross_sales += product_sales;
-      skuData[sku].refund_commission += selling_fee;
-    }
-    if (type === 'Liquidations') {
-      skuData[sku].liquidations += product_sales;
-      skuData[sku].gross_sales += product_sales
-    }
-    if (market_place?.slice(0, 3) === "sim" || market_place?.slice(1, 4) === "sim") {
-      skuData[sku].mcf_quantity += quantity
-    }
-    skuData[sku].product_sales_tax += product_sales_tax;
-    skuData[sku].shipping_credits += shipping_credits;
-    skuData[sku].shipping_credit_tax += shipping_credit_tax;
-    skuData[sku].gift_wrap_credits += gift_wrap_credits;
-    skuData[sku].gift_wrap_credits_tax += gift_wrap_credits_tax;
-    skuData[sku].regulatory_fee += regulatory_fee;
-    skuData[sku].regulatory_fee_tax += regulatory_fee_tax;
-    skuData[sku].promotional_rebates += promotional_rebates;
-    skuData[sku].promotional_rebates_tax += promotional_rebates_tax;
-    skuData[sku].marketplace_withheld_tax += marketplace_withheld_tax;
-    skuData[sku].fullfillment_fees += fba_fee;
-    skuData[sku].other_transaction_fee += other_transaction_fee;
-    skuData[sku].other += other;
-    skuData[sku].gross_profits += total;
   });
 
   costOfGods.forEach(ads => {
     const { sku, portfolio } = ads;
-    if(skuData[sku]){
+    if (skuData[sku]) {
       ads_brand.forEach(ad => {
         if (ad.portfolio == portfolio?.replace(/\r/g, "")) {
           skuData[sku].ads += parseFloat(ad.spend)
           console.log(skuData[sku].ads);
         }
       });
-      ads_display.forEach(ads=>{
-        if( sku === ads.sku){
+      ads_display.forEach(ads => {
+        if (sku === ads.sku) {
           skuData[sku].ads += ads.spend;
         }
       })
-      ads_product.forEach(ads=>{
-        if( sku === ads.sku){
+      ads_product.forEach(ads => {
+        if (sku === ads.sku) {
           skuData[sku].ads += ads.spend;
         }
       })
@@ -553,7 +557,7 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
   customerReturn.forEach(c => {
     var startDate = parseDate("03/01/2023")
     var endDate = parseDate("03/31/2023")
-    var aDate = c.date.length > 7 ? parseDate(c.date.substring(0, 10)) : parseDate(getJsDateFromExcel(c.date).getDate() + "/" + Number(getJsDateFromExcel(c.date).getMonth() + 1) + "/" + getJsDateFromExcel(c.date).getFullYear())
+    var aDate = c.last_updated_date.length > 7 ? parseDate(c.last_updated_date.substring(0, 10)) : parseDate(getJsDateFromExcel(c.last_updated_date).getDate() + "/" + Number(getJsDateFromExcel(c.last_updated_date).getMonth() + 1) + "/" + getJsDateFromExcel(c.last_updated_date).getFullYear())
     costOfGods.forEach(skuInfo => {
       const { sku, fnsku } = skuInfo;
       if (!skuData[sku]) {
@@ -695,14 +699,14 @@ let findCogs = async (rs, cogs_data) => {
   return rs;
 }
 let GenerateFile = async () => {
-  const worksheet = wb_payment.Sheets["Payment T3"];
+  const worksheet = wb_payment.Sheets["Payment 01.01.22 - 31.07.23"];
   const ws3 = workbook.Sheets["Ads Portfolio"]
   const ws4 = workbook.Sheets["Ads T3"]
   const ws5 = wb_storage_fee.Sheets["Storage Fee T3"]
-  const ws6 = wb_removal.Sheets["Removal Fee T3"]
+  const ws6 = wb_removal.Sheets["Removal Fee 01.02.22 - 31.07.23"]
   const ws7 = wb_surcharge.Sheets["Surcharge Fee T3"]
   const ws8 = rm.Sheets["Thành"]
-  const ws9 = wb_inventory_ledger.Sheets["Inventory Ledger T3"]
+  const ws9 = wb_inventory_ledger.Sheets["257487019573"]
   const cogs_sheet = cogs.Sheets["transaction list"]
   // handle ads
   const wb_ads_product = XLSX.readFile('ads_prodduct.xlsx')
@@ -844,7 +848,7 @@ let GenerateFile = async () => {
   const arr8 = XLSX.utils.sheet_to_json(ws9)
   let adjustment = arr8.map((row) => {
     return new InventoryLedger(
-      row['Date'],
+      row['Date and Time'],
       row['FNSKU'],
       row['MSKU'],
       row['Quantity'],
@@ -857,6 +861,7 @@ let GenerateFile = async () => {
   let customerReturn = arr9.map((row) => {
     return new CustomerReturn(
       row['request-date'],
+      row['last-updated-date'],
       row['sku'],
       row['fnsku'],
       row['disposition'],
@@ -871,7 +876,6 @@ let GenerateFile = async () => {
   let rs = getSKUData(payments, costOfGods, ads_brand, ads_display, ads_product, storageFee, surChargeFee, adjustment,
     customerReturn);
   let final = await findCogs(rs, cogs_data)
-  console.log(final[final.length-1]);
   // for (let i = 0; i < rs.length; i++) {
   //   let obj = rs[i];
   //   let sale_quantity = obj.sale_quantity;
