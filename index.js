@@ -1,14 +1,11 @@
 const moment = require('moment/moment');
 const XLSX = require('xlsx');
 
-const workbook = XLSX.readFile('P&L.xlsx');
-const wb_payment = XLSX.readFile('Payment-01.01.22-31.07.23.xlsx')
+const wb_payment = XLSX.readFile('Payment-01.04.2018-31.07.2023.xlsx')
 const wb_inventory_ledger = XLSX.readFile('Inventory-Ledger-01.02.22-31.07.23.xlsx')
 const wb_removal = XLSX.readFile('Removal-Fee-01.02.22-31.07.23.xlsx')
 const wb_storage_fee = XLSX.readFile('Storage-Fee-T3.xlsx')
 const wb_surcharge = XLSX.readFile('Surcharge-Fee-T3.xlsx')
-const rm = XLSX.readFile("Removal Order Detail.xlsx")
-const il = XLSX.readFile("Inventory Ledger.xlsx")
 const { getJsDateFromExcel } = require("excel-date-to-js");
 const cogs = XLSX.readFile("final.xlsx")
 const axios = require('axios')
@@ -136,12 +133,14 @@ class Ads {
   }
 }
 class Result {
-  constructor(sku, fnsku, sale_quantity, refund_quantity, product_sales, refund_amount, liquidations, gross_sales,
+  constructor(group, sku, fnsku, sale_quantity, refund_quantity, product_sales, refund_amount, liquidations, gross_sales,
     product_sales_tax, shipping_credits, shipping_credit_tax, gift_wrap_credits, gift_wrap_credits_tax, regulatory_fee,
     regulatory_fee_tax, promotional_rebates, promotional_rebates_tax, marketplace_withheld_tax, referral_fees, fullfillment_fees, refund_commission, other_transaction_fee,
-    other_adjustment, gross_profits, subscription, ads, storage_fee, disposal_fee, vine_fee, aged_inventory_surcharge, gross_profits_overall, mcf_quantity, lost_quantity_by_aw,
+    other_adjustment, gross_profits,  ads, storage_fee, disposal_fee, vine_fee, aged_inventory_surcharge, gross_profits_overall, mcf_quantity, lost_quantity_by_aw,
     adjusted_quantity_by_aw, removal_liquidations, removal_return, removal_disposal, customer_return_sellable,
-    customer_return_unsellable, sellable_return_percent, cogs_shipped, cogs_return, cogs_lost, cogs_adjusted, cogs_removal, tcogs) {
+    customer_return_unsellable, sellable_return_percent, cogs_shipped, cogs_return, cogs_lost, cogs_adjusted, cogs_removal, tcogs, missing_received_quantity, shipmentID,
+    quantity_found, reimbursed_quantity, not_reimbursed_quantity, reimbursement_for_missing_quantity, cogs_for_missing_quantity, reconcile_cogs, business_expense, net_profit) {
+    this.group = group
     this.sku = sku;
     this.fnsku = fnsku;
     this.sale_quantity = sale_quantity;
@@ -166,7 +165,6 @@ class Result {
     this.other_transaction_fee = other_transaction_fee;
     this.other_adjustment = other_adjustment;
     this.gross_profits = gross_profits;
-    this.subscription = subscription
     this.ads = ads;
     this.storage_fee = storage_fee;
     this.disposal_fee = disposal_fee;
@@ -188,6 +186,16 @@ class Result {
     this.cogs_adjusted = cogs_adjusted;
     this.cogs_removal = cogs_removal;
     this.tcogs = tcogs;
+    this.missing_received_quantity = missing_received_quantity
+    this.shipmentID = shipmentID
+    this.quantity_found = quantity_found;
+    this.reimbursed_quantity = reimbursed_quantity;
+    this.not_reimbursed_quantity = not_reimbursed_quantity;
+    this.reimbursement_for_missing_quantity = reimbursement_for_missing_quantity
+    this.cogs_for_missing_quantity = cogs_for_missing_quantity;
+    this.reconcile_cogs = reconcile_cogs;
+    this.business_expense = business_expense;
+    this.net_profit = net_profit
   }
 }
 
@@ -198,6 +206,7 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
     const { sku, fnsku } = skuInfo;
     if (!skuData[sku]) {
       skuData[sku] = {
+        group: undefined,
         sku, fnsku,
         sale_quantity: 0,
         refund_quantity: 0,
@@ -221,7 +230,6 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
         other_transaction_fee: 0,
         other: 0,
         gross_profits: 0,
-        subscription: 0,
         ads: 0,
         storage_fee: 0,
         disposal_fee: 0,
@@ -236,13 +244,15 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
         removal_disposal: 0,
         customer_return_sellable: 0,
         customer_return_unsellable: 0,
-        sellable_return_percent: 0
+        sellable_return_percent: 0,
+        reimbursed_quantity: 0,
+        reimbursement_for_missing_quantity: 0
       }
     }
   });
   paymentList.forEach(payment => {
-    if (new Date("03/01/2023") <= new Date(payment.date.includes("PDT")? payment.date.replace(" PDT", ""):payment.date.replace(" PST", "")) && 
-    new Date(payment.date.includes("PDT")? payment.date.replace(" PDT", ""):payment.date.replace(" PST", "")) < new Date("04/01/2023")) {
+    if (new Date("04/01/2018") <= new Date(payment.date.includes("PDT") ? payment.date.replace(" PDT", "") : payment.date.replace(" PST", "")) &&
+      new Date(payment.date.includes("PDT") ? payment.date.replace(" PDT", "") : payment.date.replace(" PST", "")) < new Date("08/01/2023")) {
       const { sku, type, quantity, product_sales, product_sales_tax, shipping_credits, shipping_credit_tax,
         gift_wrap_credits, gift_wrap_credits_tax, regulatory_fee, regulatory_fee_tax, promotional_rebates,
         promotional_rebates_tax, marketplace_withheld_tax, selling_fee, fba_fee, other_transaction_fee, other,
@@ -272,7 +282,6 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
           other_transaction_fee: 0,
           other: 0,
           gross_profits: 0,
-          subscription: 0,
           ads: 0,
           storage_fee: 0,
           disposal_fee: 0,
@@ -302,7 +311,7 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
         skuData[sku].gross_sales += product_sales;
         skuData[sku].refund_commission += selling_fee;
       }
-      if (type === 'Liquidations') {
+      if (type === 'Liquidations' || type === "Liquidations Adjustments") {
         skuData[sku].liquidations += product_sales;
         skuData[sku].gross_sales += product_sales
       }
@@ -386,7 +395,6 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
             other_transaction_fee: 0,
             other: 0,
             gross_profits: 0,
-            subscription: 0,
             storage_fee: 0,
             disposal_fee: 0,
             vine_fee: 0,
@@ -446,7 +454,6 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
             other_transaction_fee: 0,
             other: 0,
             gross_profits: 0,
-            subscription: 0,
             storage_fee: 0,
             disposal_fee: 0,
             aged_inventory_surcharge: 0,
@@ -517,7 +524,6 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
             other_transaction_fee: 0,
             other: 0,
             gross_profits: 0,
-            subscription: 0,
             storage_fee: 0,
             disposal_fee: 0,
             aged_inventory_surcharge: 0,
@@ -586,7 +592,6 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
           other_transaction_fee: 0,
           other: 0,
           gross_profits: 0,
-          subscription: 0,
           storage_fee: 0,
           disposal_fee: 0,
           vine_fee: 0,
@@ -623,6 +628,7 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
 
 
   return Object.values(skuData).map(sku => new Result(
+    sku.group,
     sku.sku,
     sku.fnsku,
     sku.sale_quantity,
@@ -647,13 +653,12 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
     sku.other_transaction_fee,
     sku.other,
     sku.gross_profits,
-    -sku.subscription,
     sku.ads ? Number(-sku.ads) : null,
     -sku.storage_fee,
     -sku.disposal_fee,
     -sku.vine_fee,
     -sku.aged_inventory_surcharge,
-    sku.gross_profits - (sku.subscription + Number(sku.ads ? sku.ads : 0) + sku.storage_fee + sku.disposal_fee + sku.vine_fee + sku.aged_inventory_surcharge),
+    sku.gross_profits - ( Number(sku.ads ? sku.ads : 0) + sku.storage_fee + sku.disposal_fee + sku.vine_fee + sku.aged_inventory_surcharge),
     sku.mcf_quantity,
     sku.lost_quantity_by_aw,
     sku.adjusted_quantity_by_aw,
@@ -694,18 +699,297 @@ let findCogs = async (rs, cogs_data) => {
       }
       sku.tcogs = parseFloat(sku.cogs_shipped) + parseFloat(sku.cogs_removal) +
         parseFloat(sku.cogs_return) + parseFloat(sku.cogs_lost) + parseFloat(sku.cogs_adjusted)
+    } else {
+      sku.cogs_shipped = 0;
+      sku.cogs_removal = 0;
+      sku.cogs_adjusted = 0;
+      sku.cogs_lost = 0;
+      sku.cogs_return = 0;
+      sku.tcogs = 0
     }
   })
   return rs;
 }
+let splitEmptySku = async (data, payments) => {
+  const nullSkuElements = data.filter((item) => item.sku == undefined);
+  const nonNullSkuElements = data.filter((item) => item.sku !== undefined);
+  let newData = [...nonNullSkuElements, ...nullSkuElements];
+  let filterPayments = payments.filter(p => p.sku == undefined);
+  let sub_fee = 0, sub_fee_adjustment = 0, early_reviewer_program_fee = 0, vine_Enrollment_Fee = 0, coupom_fee = 0, lighting_deal_fee = 0,
+    commisstion_adjustment = 0, fee_adjustment = 0, fba_inventory = 0, other = 0, fba_amazon = 0, fba_international = 0, advertising_payment = 0, previous_storage_fee = 0,
+    surcharge_fee = 0, disposal_fee = 0, return_fee = 0, debt = 0, transfer = 0, retrocharge=0, retrocharge_reversal =0
+  filterPayments.forEach(p => {
+    if (p.description == "Subscription") {
+      sub_fee += p.total
+    }
+    else if (p.description == "Subscription Fee Adjustment") {
+      sub_fee_adjustment += p.total;
+    }
+    else if (p.description?.includes("Early Reviewer Program fee")) {
+      early_reviewer_program_fee += p.total;
+    }
+    else if (p.description == "Vine Enrollment Fee") {
+      vine_Enrollment_Fee += p.total;
+    }
+    else if (p.description?.includes("Coupon Redemption Fee")) {
+      coupom_fee += p.total
+    }
+    else if (p.type == "Deal Fee") {
+      lighting_deal_fee += p.total
+    }
+    else if (p.description == "Commission Adjustment") {
+      commisstion_adjustment += p.total
+    }
+    else if (p.description == "Fee Adjustment - Weight and Dimension Change") {
+      fee_adjustment += p.total
+    }
+    else if (p.description == "FBA Inventory Reimbursement - Fee Correction") {
+      fba_inventory += p.total
+    }else if(p.type == "Order_Retrocharge"){
+      retrocharge += p.marketplace_withheld_tax
+    }else if(p.type == "Refund_Retrocharge"){
+      retrocharge_reversal += p.marketplace_withheld_tax
+    }
+    // if(p.description == "Other" || p.type == "Order_Retrocharge"){
+    //   other+= p.total
+    // }
+    else if (p.description == "FBA Amazon-Partnered Carrier Shipment Fee") {
+      fba_amazon += p.total
+    }
+    else if (p.description == "FBA international shipping charge") {
+      fba_international += p.total
+    }
+    else if (p.description == "Cost of Advertising") {
+      advertising_payment += p.total
+    }
+    else if (p.description == "FBA Inventory Storage Fee") {
+      previous_storage_fee += p.total
+    }
+    else if (p.description == "FBA Long-Term Storage Fee") {
+      surcharge_fee += p.total
+    }
+    else if (p.description == "FBA Removal Order: Disposal Fee") {
+      disposal_fee += p.total
+    }
+    else if (p.description == "FBA Removal Order: Return Fee") {
+      return_fee += p.total
+    }
+    else if (p.type == "Debt") {
+      debt += p.total
+    }
+    else if (p.type == "Transfer") {
+      transfer += p.total
+    } else {
+      other += p.total
+    }
+  })
+  newData.push({})
+  newData.push({ group: "Subscription Fee", other_adjustment: sub_fee })
+  newData.push({ group: "Subscription Fee Adjustment", other_adjustment: sub_fee_adjustment})
+  newData.push({ group: "Debt", other_adjustment: debt })
+  newData.push({ group: "Early Reviewer Program Fee", other_transaction_fee: early_reviewer_program_fee})
+  newData.push({ group: "Vine Enrollment Fee", other_adjustment: vine_Enrollment_Fee })
+  newData.push({ group: "Coupon Redemption Fee", other_transaction_fee: coupom_fee})
+  newData.push({ group: "Lightning Deal Fee", other_transaction_fee: lighting_deal_fee})
+  newData.push({ group: "Commission Adjustment", other_adjustment: commisstion_adjustment })
+  newData.push({ group: "Fee Adjustment - Weight and Dimension Change", fullfillment_fees: fee_adjustment})
+  newData.push({ group: "FBA Inventory Reimbursement - Fee Correction", other_adjustment: fba_inventory })
+  newData.push({ group: "Retrocharge", marketplace_withheld_tax: retrocharge})
+  newData.push({ group: "Retrocharge Reversal", marketplace_withheld_tax: retrocharge_reversal})
+  newData.push({ group: "Other", other_adjustment: other })
+  newData.push({ group: "FBA Amazon-Partnered Carrier Shipment Fee", other_adjustment: fba_amazon })
+  newData.push({ group: "FBA International Shipping Charge", other_adjustment: fba_international})
+  newData.push({ group: "Advertising Payment", other_transaction_fee: advertising_payment })
+  newData.push({ group: "Previous Storage Fee", other_adjustment: previous_storage_fee })
+  newData.push({ group: "Surcharge Fee", other_adjustment: surcharge_fee })
+  newData.push({ group: "Disposal Fee", other_adjustment: disposal_fee })
+  newData.push({ group: "Return Fee", other_adjustment: return_fee })
+  newData.push({ group: "Transfer Payment", other_adjustment: transfer })
+  newData.push({})
+  // tính statistic cho dòng total
+  let total_sales_quantity = newData.reduce((acc, obj) => acc + (obj.sale_quantity || 0), 0);
+  let refund_quantity_total= newData.reduce((acc, obj) => acc + (obj.refund_quantity || 0), 0);
+  let total_product_sales = newData.reduce((acc, obj) => acc + (obj.product_sales || 0), 0);
+  let total_refund_amount = newData.reduce((acc, obj) => acc + (obj.refund_amount || 0), 0);
+  let liquidations = newData.reduce((acc, obj) => acc + (obj.liquidations || 0), 0);
+  let gross_sales = newData.reduce((acc, obj) => acc + (obj.gross_sales|| 0), 0);
+  let product_sales_tax = newData.reduce((acc, obj) => acc + (obj.product_sales_tax || 0), 0);
+  let shipping_credits = newData.reduce((acc, obj) => acc + (obj.shipping_credits || 0), 0);
+  let shipping_credit_tax= newData.reduce((acc, obj) => acc + (obj.shipping_credit_tax || 0), 0);
+  let gift_wrap_credits = newData.reduce((acc, obj) => acc + (obj.gift_wrap_credits || 0), 0);
+  let gift_wrap_credits_tax = newData.reduce((acc, obj) => acc + (obj.gift_wrap_credits_tax || 0), 0);
+  let regulatory_fee = newData.reduce((acc, obj) => acc + (obj.regulatory_fee || 0), 0);
+  let regulatory_fee_tax= newData.reduce((acc, obj) => acc + (obj.regulatory_fee_tax || 0), 0);
+  let promotional_rebates= newData.reduce((acc, obj) => acc + (obj.promotional_rebates || 0), 0);
+  let promotional_rebates_tax= newData.reduce((acc, obj) => acc + (obj.promotional_rebates_tax || 0), 0);
+  let marketplace_withheld_tax= newData.reduce((acc, obj) => acc + (obj.marketplace_withheld_tax || 0), 0);
+  let referral_fees= newData.reduce((acc, obj) => acc + (obj.referral_fees || 0), 0);
+  let fullfillment_fees = newData.reduce((acc, obj) => acc + (obj.fullfillment_fees || 0), 0);
+  let refund_commission= newData.reduce((acc, obj) => acc + (obj.refund_commission || 0), 0);
+  let other_transaction_fee= newData.reduce((acc, obj) => acc + (obj.other_transaction_fee || 0), 0);
+  let other_adjustment= newData.reduce((acc, obj) => acc + (obj.other_adjustment || 0), 0);
+  let gross_profits = newData.reduce((acc, obj) => acc + (obj.gross_profits || 0), 0);
+  let ads= newData.reduce((acc, obj) => acc + (obj.ads || 0), 0);
+  let storage_fee= newData.reduce((acc, obj) => acc + (obj.storage_fee || 0), 0);
+  let disposal_fee_total= newData.reduce((acc, obj) => acc + (obj.disposal_fee || 0), 0);
+  let vine_fee = newData.reduce((acc, obj) => acc + (obj.vine_fee || 0), 0);
+  let aged_inventory_surcharge = newData.reduce((acc, obj) => acc + (obj.aged_inventory_surcharge || 0), 0);
+  let gross_profits_overall = newData.reduce((acc, obj) => acc + (obj.gross_profits_overall || 0), 0);
+  let mcf_quantity = newData.reduce((acc, obj) => acc + (obj.mcf_quantity || 0), 0);
+  let lost_quantity_by_aw= newData.reduce((acc, obj) => acc + (obj.lost_quantity_by_aw || 0), 0);
+  let adjusted_quantity_by_aw= newData.reduce((acc, obj) => acc + (obj.adjusted_quantity_by_aw || 0), 0);
+  let removal_liquidations = newData.reduce((acc, obj) => acc + (obj.removal_liquidations || 0), 0);
+  let removal_return= newData.reduce((acc, obj) => acc + (obj.removal_return || 0), 0);
+  let removal_disposal = newData.reduce((acc, obj) => acc + (obj.removal_disposal || 0), 0);
+  let customer_return_sellable= newData.reduce((acc, obj) => acc + (obj.customer_return_sellable || 0), 0);
+  let customer_return_unsellable= newData.reduce((acc, obj) => acc + (obj.customer_return_unsellable || 0), 0);
+  let sellable_return_percent = newData.reduce((acc, obj) => acc + (parseFloat(obj.sellable_return_percent) || 0), 0);
+  let cogs_shipped = newData.reduce((acc, obj) => acc + (obj.cogs_shipped || 0), 0);
+  let cogs_return= newData.reduce((acc, obj) => acc + (obj.cogs_return || 0), 0);
+  let cogs_lost= newData.reduce((acc, obj) => acc + (obj.cogs_lost || 0), 0);
+  let cogs_adjusted= newData.reduce((acc, obj) => acc + (obj.cogs_adjusted || 0), 0);
+  let cogs_removal = newData.reduce((acc, obj) => acc + (obj.cogs_removal || 0), 0);
+  let tcogs= newData.reduce((acc, obj) => acc + (obj.tcogs || 0), 0);
+  let missing_received_quantity= newData.reduce((acc, obj) => acc + (obj.missing_received_quantity || 0), 0);
+  //  shipmentID,
+  let quantity_found = newData.reduce((acc, obj) => acc + (obj.quantity_found || 0), 0);
+  let reimbursed_quantity= newData.reduce((acc, obj) => acc + (obj.reimbursed_quantity || 0), 0);
+  let not_reimbursed_quantity = newData.reduce((acc, obj) => acc + (obj.not_reimbursed_quantity || 0), 0);
+  let reimbursement_for_missing_quantity = newData.reduce((acc, obj) => acc + (obj.reimbursement_for_missing_quantity || 0), 0);
+  let cogs_for_missing_quantity= newData.reduce((acc, obj) => acc + (obj.cogs_for_missing_quantity || 0), 0);
+  let reconcile_cogs = newData.reduce((acc, obj) => acc + (obj.reconcile_cogs || 0), 0);
+  let business_expense = newData.reduce((acc, obj) => acc + (obj.business_expense || 0), 0);
+  let net_profit= newData.reduce((acc, obj) => acc + (obj.net_profit || 0), 0);
+  newData.push({group: "Total",sale_quantity: total_sales_quantity,refund_quantity: refund_quantity_total,product_sales: total_product_sales,refund_amount: total_refund_amount,
+  liquidations: liquidations, gross_sales: gross_sales,product_sales_tax: product_sales_tax,shipping_credits: shipping_credits,shipping_credit_tax: shipping_credit_tax,gift_wrap_credits: gift_wrap_credits,
+  gift_wrap_credits_tax: gift_wrap_credits_tax,regulatory_fee: regulatory_fee,regulatory_fee_tax: regulatory_fee_tax,promotional_rebates: promotional_rebates,promotional_rebates_tax: promotional_rebates_tax,
+  marketplace_withheld_tax: marketplace_withheld_tax,referral_fees: referral_fees,fullfillment_fees: fullfillment_fees,refund_commission: refund_commission, other_transaction_fee: other_transaction_fee,
+  other_adjustment: other_adjustment,gross_profits: gross_profits,ads: ads,storage_fee: storage_fee,disposal_fee: disposal_fee_total,vine_fee: vine_fee,aged_inventory_surcharge: aged_inventory_surcharge,
+  gross_profits_overall: gross_profits_overall, mcf_quantity: mcf_quantity,lost_quantity_by_aw: lost_quantity_by_aw,adjusted_quantity_by_aw: adjusted_quantity_by_aw,removal_liquidations: removal_liquidations,
+  removal_return: removal_return,removal_disposal: removal_disposal,customer_return_sellable: customer_return_sellable,customer_return_unsellable: customer_return_unsellable,
+  sellable_return_percent: sellable_return_percent,cogs_shipped :cogs_shipped, cogs_return: cogs_return, cogs_lost: cogs_lost, cogs_adjusted:cogs_adjusted, cogs_removal:cogs_removal,
+  tcogs: tcogs, missing_received_quantity:missing_received_quantity, shipmentID: undefined,quantity_found: quantity_found, reimbursed_quantity: reimbursed_quantity, 
+  not_reimbursed_quantity: not_reimbursed_quantity, reimbursement_for_missing_quantity: reimbursement_for_missing_quantity, cogs_for_missing_quantity:cogs_for_missing_quantity,
+  reconcile_cogs: reconcile_cogs, business_expense: business_expense, net_profit: net_profit})
+  return newData;
+}
+let handleRemoveDuplicated = async (records) => {
+  let result = [];
+  //  xóa dòng empty
+  // let empty = records.filter(r=> r.sku == undefined)[0]
+  // if(empty){
+  //   console.log(empty);
+  //   result.push(empty)
+  // }
+  let processedFnskus = {};
+  for (let i = 0; i < records.length; i++) {
+    let currentRecord = records[i];
+    // Kiểm tra xem fnsku đã được xử lý chưa
+    if (!processedFnskus[currentRecord.fnsku] && currentRecord.sku != undefined) {
+      let reversedRecord = records.find(
+        (record) =>
+          record.sku === currentRecord.fnsku && record.fnsku === currentRecord.sku
+      );
+
+      if (reversedRecord) {
+        // Nếu tìm thấy, cộng dồn data của bản ghi đảo ngược vào data của bản ghi hiện tại
+        currentRecord.sale_quantity += reversedRecord.sale_quantity;
+        currentRecord.refund_quantity += reversedRecord.refund_quantity;
+        currentRecord.product_sales += reversedRecord.product_sales;
+        currentRecord.refund_amount += reversedRecord.refund_amount;
+        currentRecord.liquidations += reversedRecord.liquidations;
+        currentRecord.gross_sales += reversedRecord.gross_sales;
+        currentRecord.product_sales_tax += reversedRecord.product_sales_tax
+        currentRecord.shipping_credits += reversedRecord.shipping_credits
+        currentRecord.shipping_credit_tax += reversedRecord.shipping_credit_tax
+        currentRecord.gift_wrap_credits += reversedRecord.gift_wrap_credits
+        currentRecord.gift_wrap_credits_tax += reversedRecord.gift_wrap_credits_tax
+        currentRecord.regulatory_fee += reversedRecord.regulatory_fee
+        currentRecord.regulatory_fee_tax += reversedRecord.regulatory_fee_tax
+        currentRecord.promotional_rebates += reversedRecord.promotional_rebates
+        currentRecord.promotional_rebates_tax += reversedRecord.promotional_rebates_tax
+        currentRecord.marketplace_withheld_tax += reversedRecord.marketplace_withheld_tax
+        currentRecord.referral_fees += reversedRecord.referral_fees
+        currentRecord.fullfillment_fees += reversedRecord.fullfillment_fees,
+          currentRecord.refund_commission += reversedRecord.refund_commission,
+          currentRecord.other_transaction_fee += reversedRecord.other_transaction_fee,
+          currentRecord.other_adjustment += reversedRecord.other_adjustment
+        currentRecord.gross_profits += reversedRecord.gross_profits
+        currentRecord.ads += reversedRecord.ads;
+        currentRecord.storage_fee += reversedRecord.storage_fee
+        currentRecord.disposal_fee += reversedRecord.disposal_fee
+        currentRecord.vine_fee += reversedRecord.vine_fee
+        currentRecord.aged_inventory_surcharge += reversedRecord.aged_inventory_surcharge
+        currentRecord.gross_profits_overall += reversedRecord.gross_profits_overall
+        currentRecord.mcf_quantity += reversedRecord.mcf_quantity;
+        currentRecord.lost_quantity_by_aw += reversedRecord.lost_quantity_by_aw
+        currentRecord.adjusted_quantity_by_aw += reversedRecord.adjusted_quantity_by_aw;
+        currentRecord.removal_liquidations += reversedRecord.removal_liquidations;
+        currentRecord.removal_return += reversedRecord.removal_return;
+        currentRecord.removal_disposal += reversedRecord.removal_disposal;
+        currentRecord.customer_return_sellable += reversedRecord.customer_return_sellable
+        currentRecord.customer_return_unsellable += reversedRecord.customer_return_unsellable;
+        currentRecord.sellable_return_percent = (currentRecord.customer_return_sellable + currentRecord.customer_return_unsellable) != 0 ?
+          currentRecord.customer_return_sellable / (currentRecord.customer_return_sellable + currentRecord.customer_return_unsellable) * 100 + "%" : "0%"
+        currentRecord.cogs_shipped += reversedRecord?.cogs_shipped;
+        currentRecord.cogs_return += reversedRecord?.cogs_return
+        currentRecord.cogs_lost += reversedRecord?.cogs_lost
+        currentRecord.cogs_adjusted += reversedRecord?.cogs_adjusted
+        currentRecord.cogs_removal += reversedRecord?.cogs_removal
+        currentRecord.tcogs += reversedRecord?.tcogs
+        // Đánh dấu fnsku đã được xử lý
+        processedFnskus[currentRecord.fnsku] = true;
+      }
+    }
+
+    // Thêm bản ghi hiện tại vào kết quả nếu nó chưa tồn tại trong kết quả
+    if (!processedFnskus[currentRecord.sku] && currentRecord.sku != undefined) {
+      result.push(currentRecord);
+    }
+  }
+  return result
+}
+let findRemainFields = async (splitEmptySkuData, payments) => {
+  splitEmptySkuData.forEach(sku => {
+    sku.net_profit = sku.gross_profits_overall + sku.tcogs
+    sku.group = undefined;
+    let tmp = payments.filter(p => p.sku == sku.sku && p.description == "FBA Inventory Reimbursement - Lost:Inbound")
+    sku.reimbursed_quantity = 0;
+    sku.reimbursement_for_missing_quantity = 0;
+    if (tmp) {
+      for (var i = 0; i < tmp.length; i++) {
+        sku.reimbursed_quantity += tmp[i].quantity
+        sku.reimbursement_for_missing_quantity += tmp[i].other;
+      }
+    }
+  })
+  return splitEmptySkuData
+}
+function hasAllZeroPropertiesExcept(obj, excludedProps) {
+  for (const key in obj) {
+    if (obj.hasOwnProperty(key)) {
+      if (!excludedProps.includes(key) && obj[key] !== 0 && obj[key] != undefined && obj[key] != "0%" && obj[key] !== -0) {
+        return false; // Nếu có ít nhất một thuộc tính không nằm trong danh sách loại trừ và có giá trị khác 0, trả về false
+      }
+    }
+  }
+  return true; // Nếu tất cả các thuộc tính nằm trong danh sách loại trừ hoặc có giá trị bằng 0, trả về true
+}
+let removeNullRow = async(data)=>{
+  let rs =[]
+  data.forEach(d=>{
+    if(!hasAllZeroPropertiesExcept(d,['sku', 'fnsku'])){
+      rs.push(d);
+    }
+  })
+  rs.sort((a, b) => b.sale_quantity - a.sale_quantity);
+  return rs;
+}
 let GenerateFile = async () => {
-  const worksheet = wb_payment.Sheets["Payment 01.01.22 - 31.07.23"];
-  const ws3 = workbook.Sheets["Ads Portfolio"]
-  const ws4 = workbook.Sheets["Ads T3"]
+  const worksheet = wb_payment.Sheets["Sheet1"];
   const ws5 = wb_storage_fee.Sheets["Storage Fee T3"]
   const ws6 = wb_removal.Sheets["Removal Fee 01.02.22 - 31.07.23"]
   const ws7 = wb_surcharge.Sheets["Surcharge Fee T3"]
-  const ws8 = rm.Sheets["Thành"]
   const ws9 = wb_inventory_ledger.Sheets["257487019573"]
   const cogs_sheet = cogs.Sheets["transaction list"]
   // handle ads
@@ -799,21 +1083,6 @@ let GenerateFile = async () => {
   });
 
 
-  const arr3 = XLSX.utils.sheet_to_json(ws3);
-  let adsPortfolio = arr3.map((row) => {
-    return new AdsPortfolio(
-      row['Sku'],
-      row['Portfolio']
-    );
-  });
-
-  const arr4 = XLSX.utils.sheet_to_json(ws4);
-  let adsT3 = arr4.map((row) => {
-    return new AdsT3(
-      row['Portfolio'],
-      row['Spend(USD)']
-    )
-  })
 
   const arr5 = XLSX.utils.sheet_to_json(ws5);
   let storageFee = arr5.map((row) => {
@@ -823,18 +1092,6 @@ let GenerateFile = async () => {
     )
   })
 
-  const arr6 = XLSX.utils.sheet_to_json(ws6)
-  let removalFee = arr6.map((row) => {
-    return new RemovalFee(
-      row['sku'],
-      row['order-type'],
-      row['removal-fee'],
-      row['order-type'],
-      row['disposition'],
-      row['shipped_quantity'],
-      row['disposed-quantity']
-    )
-  })
 
   const arr7 = XLSX.utils.sheet_to_json(ws7)
   let surChargeFee = arr7.map((row) => {
@@ -876,108 +1133,26 @@ let GenerateFile = async () => {
   let rs = getSKUData(payments, costOfGods, ads_brand, ads_display, ads_product, storageFee, surChargeFee, adjustment,
     customerReturn);
   let final = await findCogs(rs, cogs_data)
-  // for (let i = 0; i < rs.length; i++) {
-  //   let obj = rs[i];
-  //   let sale_quantity = obj.sale_quantity;
-  //   let refund_quantity= obj.refund_quantity;
-  //   let product_sales_order= obj.product_sales;
-  //   let product_sales_refund= obj.refund_amount;
-  //   let liquidations= obj.liquidations;
-  //   let gross_sales = obj.gross_sales;
-  //   let product_sales_tax= obj.product_sales_tax;
-  //   let  shipping_credits= obj.shipping_credits
-  //   let shipping_credit_tax= obj.shipping_credit_tax
-  //   let gift_wrap_credits= obj.gift_wrap_credits
-  //   let gift_wrap_credits_tax= obj.gift_wrap_credits_tax
-  //   let regulatory_fee= obj.regulatory_fee
-  //   let regulatory_fee_tax= obj.regulatory_fee_tax
-  //   let  promotional_rebates= obj.promotional_rebates
-  //   let  promotional_rebates_tax= obj.promotional_rebates_tax
-  //   let  marketplace_withheld_tax= obj.marketplace_withheld_tax
-  //   let  referral_fees= obj.referral_fees
-  //   let  fullfillment_fees= obj.fullfillment_fees
-  //   let  refund_commission= obj.refund_commission
-  //   let other_transaction_fee= obj.other_transaction_fee
-  //   let other= obj.other_adjustment
-  //   let  gross_profits= obj.gross_profits
-  //   let ads= obj.ads
-  //   let  storage_fee= obj.storage_fee
-  //   let  disposal_fee= obj.disposal_fee
-  //   let aged_inventory_surcharge= obj.aged_inventory_surcharge
-  //   let  gross_profits_overall= obj.gross_profits_overall
-  //   let j = i + 1;
-  //   while (j < rs.length) {
-  //     let otherObj = rs[j];
-  //     if (otherObj.sku === obj.fnsku) {
-  //       console.log(otherObj);
-  //       liquidations += otherObj.liquidations;
-  //       sale_quantity+= otherObj.sale_quantity;
-  //       refund_quantity += otherObj.refund_quantity;
-  //       product_sales_order += otherObj.product_sales;
-  //       product_sales_refund+= otherObj.refund_amount;
-  //       gross_sales += otherObj.gross_sales;
-  //       product_sales_tax += otherObj.product_sales_tax
-  //       shipping_credits += otherObj.shipping_credits
-  //       shipping_credit_tax+= otherObj.shipping_credit_tax
-  //       gift_wrap_credits+= otherObj.gift_wrap_credits
-  //       gift_wrap_credits_tax+= otherObj.gift_wrap_credits_tax
-  //       regulatory_fee+= otherObj.regulatory_fee
-  //       regulatory_fee_tax+= otherObj.regulatory_fee_tax
-  //       promotional_rebates+= otherObj.promotional_rebates
-  //       promotional_rebates_tax+= otherObj.promotional_rebates_tax
-  //       marketplace_withheld_tax += otherObj.marketplace_withheld_tax
-  //       referral_fees+= otherObj.referral_fees
-  //       fullfillment_fees+= otherObj.fullfillment_fees,
-  //       refund_commission+= otherObj.refund_commission,
-  //       other_transaction_fee+= otherObj.other_transaction_fee,
-  //       other+= otherObj.other_adjustment
-  //       gross_profits+= otherObj.gross_profits
-  //       ads+= otherObj.ads;
-  //       storage_fee += otherObj.storage_fee
-  //       disposal_fee += otherObj.disposal_fee
-  //       aged_inventory_surcharge+= otherObj.aged_inventory_surcharge
-  //       gross_profits_overall += otherObj.gross_profits_overall
-  //       rs.splice(j, 1);
-  //     } else {
-  //       j++;
-  //     }
-  //   }
-  //   if (liquidations > obj.liquidations) {
-  //     let newObj = { sku: obj.sku, fnsku: obj.fnsku,
-  //       sale_quantity: sale_quantity,
-  //       refund_quantity: refund_quantity,
-  //       product_sales :product_sales_order,
-  //       refund_amount : product_sales_refund,
-  //       liquidations: liquidations,
-  //       gross_sales: gross_sales,
-  //       product_sales_tax,
-  //       shipping_credits,
-  //       shipping_credit_tax,
-  //       gift_wrap_credits,
-  //       gift_wrap_credits_tax,
-  //       regulatory_fee,
-  //       regulatory_fee_tax,
-  //       promotional_rebates,
-  //       promotional_rebates_tax,
-  //       marketplace_withheld_tax,
-  //       referral_fees,
-  //       fullfillment_fees,
-  //       refund_commission,
-  //       other_transaction_fee,
-  //       other_adjustment: other,
-  //       gross_profits,
-  //       ads,
-  //       storage_fee,
-  //       disposal_fee,
-  //       aged_inventory_surcharge,
-  //       gross_profits_overall:gross_profits_overall};
-  //     rs.splice(i, 1, newObj);
-  //   }
-  //  // console.log(rs);
-  // }
-  const newWorksheet = XLSX.utils.json_to_sheet(final);
-  XLSX.utils.book_append_sheet(workbook, newWorksheet, "Thành T3");
-  XLSX.writeFile(workbook, 'data.xlsx');
+  let finalData = []
+  if (final) {
+    finalData = await handleRemoveDuplicated(final)
+  }
+  let findRemainFieldsData = await findRemainFields(finalData, payments)
+  let removeNullRowData = await removeNullRow(findRemainFieldsData)
+  let splitEmptySkuData = await splitEmptySku(removeNullRowData, payments);
+
+  const newWorkbook = XLSX.utils.book_new();
+  const newWorksheet = XLSX.utils.json_to_sheet(splitEmptySkuData);
+  XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, "P&L");
+  // rename colummn
+  XLSX.utils.sheet_add_aoa(newWorksheet, [["Group", "Sku", "Fnsku", "Sale Quantity", "Refund Quantity", "Product Sales", "Refund Amount", "Liquidations", "Gross Sales",
+    "Product Sales Tax", "Shipping Credits", "Shipping Credits Tax", "Gift Wrap Credits", "Giftwrap Credits Tax", "Regulatory Fee", "Regulatory Fee Tax", "Promotional Rebates", "Promotional Rebates Tax",
+    "Marketplace Withheld Tax", "Referral Fees", "Fulfillment Fees", "Refund Commission", "Other Transaction Fees", "Other Adjustment", "Gross Profit (by product)", "Ads", "Storage Fee",
+    "Removal Fee", "Vine Fee", "Aged-inventory Surcharge", "Gross Profit (overall)", "MCF Quantity", "Lost/Damaged Quantity", "Adjusted Quantity", "Removal Quantity of Sellable Units (Liquidations)"
+    , "Removal Quantity of Sellable Units (Return)", "Removal Quantity of Sellable Units (Disposal)", "Customer Return Quantity (Sellable)", "Customer Return Quantity (Unsellable)", "% Sellable Returns",
+    "COGS Shipped", "COGS Customer Return", "COGS Lost/Damaged", "COGS Adjusted", "COGS Removal", "TCOGS", "Missing Received Quantity", "Shipment ID", "Quantity Found", "Reimbursed Quantity", "Quantity is Not Reimbursed",
+    "Reimbursement for Missing Quantity", "COGS for Missing Quantity", "Reconcile COGS", "Other Expenses", "Net Profit"]], { origin: "A1" });
+  XLSX.writeFile(newWorkbook, 'P&L.xlsx');
 }
 
 GenerateFile()

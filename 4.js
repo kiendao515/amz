@@ -1,6 +1,10 @@
-const listShipmentID = ["FBA16XJXW9Z6", "FBA16V77Q3T4", "FBA16PFFKY38", "FBA16P4CTPN2"];
-const targetValue = "FBA16V77Q3T4";
-
-const elementsAfter = listShipmentID.filter(value => value !== targetValue).slice(0, listShipmentID.indexOf(targetValue));
-
-console.log(elementsAfter);
+var danhSachObj = [
+    { data: 5 },
+    { data: 3 },
+    { data: 8 },
+    { data: 1 }
+  ];
+  
+  danhSachObj.sort((a, b) => b.data - a.data);
+  
+  console.log(danhSachObj);
