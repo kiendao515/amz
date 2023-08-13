@@ -48,11 +48,12 @@ class Payment {
 }
 
 class CostOfGods {
-  constructor(sku, fnsku, total_amount, portfolio) {
+  constructor(sku, fnsku, total_amount, portfolio, group) {
     this.sku = sku;
     this.fnsku = fnsku;
     this.total_amount = total_amount;
     this.portfolio = portfolio
+    this.group = group;
   }
 }
 class AdsPortfolio {
@@ -138,8 +139,8 @@ class Result {
     regulatory_fee_tax, promotional_rebates, promotional_rebates_tax, marketplace_withheld_tax, referral_fees, fullfillment_fees, refund_commission, other_transaction_fee,
     other_adjustment, gross_profits,  ads, storage_fee, disposal_fee, vine_fee, aged_inventory_surcharge, gross_profits_overall, mcf_quantity, lost_quantity_by_aw,
     adjusted_quantity_by_aw, removal_liquidations, removal_return, removal_disposal, customer_return_sellable,
-    customer_return_unsellable, sellable_return_percent, cogs_shipped, cogs_return, cogs_lost, cogs_adjusted, cogs_removal, tcogs, missing_received_quantity, shipmentID,
-    quantity_found, reimbursed_quantity, not_reimbursed_quantity, reimbursement_for_missing_quantity, cogs_for_missing_quantity, reconcile_cogs, business_expense, net_profit) {
+    customer_return_unsellable, sellable_return_percent, missing_received_quantity, shipmentID,
+    quantity_found, reimbursed_quantity, not_reimbursed_quantity, reimbursement_for_missing_quantity, cogs_for_missing_quantity, reconcile_cogs,cogs_shipped, cogs_return, cogs_lost, cogs_adjusted, cogs_removal, tcogs, business_expense, net_profit) {
     this.group = group
     this.sku = sku;
     this.fnsku = fnsku;
@@ -180,12 +181,6 @@ class Result {
     this.customer_return_sellable = customer_return_sellable;
     this.customer_return_unsellable = customer_return_unsellable
     this.sellable_return_percent = sellable_return_percent;
-    this.cogs_shipped = cogs_shipped;
-    this.cogs_return = cogs_return;
-    this.cogs_lost = cogs_lost;
-    this.cogs_adjusted = cogs_adjusted;
-    this.cogs_removal = cogs_removal;
-    this.tcogs = tcogs;
     this.missing_received_quantity = missing_received_quantity
     this.shipmentID = shipmentID
     this.quantity_found = quantity_found;
@@ -194,6 +189,12 @@ class Result {
     this.reimbursement_for_missing_quantity = reimbursement_for_missing_quantity
     this.cogs_for_missing_quantity = cogs_for_missing_quantity;
     this.reconcile_cogs = reconcile_cogs;
+    this.cogs_shipped = cogs_shipped;
+    this.cogs_return = cogs_return;
+    this.cogs_lost = cogs_lost;
+    this.cogs_adjusted = cogs_adjusted;
+    this.cogs_removal = cogs_removal;
+    this.tcogs = tcogs;
     this.business_expense = business_expense;
     this.net_profit = net_profit
   }
@@ -203,10 +204,10 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
   customerReturn) {
   const skuData = {};
   costOfGods.forEach(skuInfo => {
-    const { sku, fnsku } = skuInfo;
+    const { sku, fnsku, group } = skuInfo;
     if (!skuData[sku]) {
       skuData[sku] = {
-        group: undefined,
+        group: group,
         sku, fnsku,
         sale_quantity: 0,
         refund_quantity: 0,
@@ -341,7 +342,6 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
       ads_brand.forEach(ad => {
         if (ad.portfolio == portfolio?.replace(/\r/g, "")) {
           skuData[sku].ads += parseFloat(ad.spend)
-          console.log(skuData[sku].ads);
         }
       });
       ads_display.forEach(ads => {
@@ -356,14 +356,6 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
       })
     }
   });
-  // removalFee.forEach(r => {
-  //   const { sku, removal_fee, order_type } = r;
-  //   if (skuData[sku]) {
-  //     if (order_type === 'Disposal' || order_type === 'Return') {
-  //       skuData[sku].disposal_fee += removal_fee
-  //     }
-  //   }
-  // });
 
   surChargeFee.forEach(s => {
     costOfGods.forEach(skuInfo => {
@@ -672,6 +664,7 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
   ));
 }
 let findCogs = async (rs, cogs_data) => {
+  console.log(rs);
   rs.forEach(sku => {
     let skuData = cogs_data.filter(t => t.sku === sku.sku && (new Date(t.date) >= new Date("03/01/2023")) && (new Date(t.date) < new Date("04/01/2023")) && t.disposition == "SELLABLE")
     if (skuData.length > 0) {
@@ -784,27 +777,27 @@ let splitEmptySku = async (data, payments) => {
     }
   })
   newData.push({})
-  newData.push({ group: "Subscription Fee", other_adjustment: sub_fee })
-  newData.push({ group: "Subscription Fee Adjustment", other_adjustment: sub_fee_adjustment})
-  newData.push({ group: "Debt", other_adjustment: debt })
-  newData.push({ group: "Early Reviewer Program Fee", other_transaction_fee: early_reviewer_program_fee})
-  newData.push({ group: "Vine Enrollment Fee", other_adjustment: vine_Enrollment_Fee })
-  newData.push({ group: "Coupon Redemption Fee", other_transaction_fee: coupom_fee})
-  newData.push({ group: "Lightning Deal Fee", other_transaction_fee: lighting_deal_fee})
-  newData.push({ group: "Commission Adjustment", other_adjustment: commisstion_adjustment })
-  newData.push({ group: "Fee Adjustment - Weight and Dimension Change", fullfillment_fees: fee_adjustment})
-  newData.push({ group: "FBA Inventory Reimbursement - Fee Correction", other_adjustment: fba_inventory })
-  newData.push({ group: "Retrocharge", marketplace_withheld_tax: retrocharge})
-  newData.push({ group: "Retrocharge Reversal", marketplace_withheld_tax: retrocharge_reversal})
-  newData.push({ group: "Other", other_adjustment: other })
-  newData.push({ group: "FBA Amazon-Partnered Carrier Shipment Fee", other_adjustment: fba_amazon })
-  newData.push({ group: "FBA International Shipping Charge", other_adjustment: fba_international})
-  newData.push({ group: "Advertising Payment", other_transaction_fee: advertising_payment })
-  newData.push({ group: "Previous Storage Fee", other_adjustment: previous_storage_fee })
-  newData.push({ group: "Surcharge Fee", other_adjustment: surcharge_fee })
-  newData.push({ group: "Disposal Fee", other_adjustment: disposal_fee })
-  newData.push({ group: "Return Fee", other_adjustment: return_fee })
-  newData.push({ group: "Transfer Payment", other_adjustment: transfer })
+  newData.push({ group: "Subscription Fee", other_adjustment: sub_fee, gross_profits: sub_fee, gross_profits_overall: sub_fee, net_profit: sub_fee })
+  newData.push({ group: "Subscription Fee Adjustment", other_adjustment: sub_fee_adjustment, gross_profits: sub_fee_adjustment, gross_profits_overall:sub_fee_adjustment, net_profit: sub_fee_adjustment})
+  newData.push({ group: "Debt", other_adjustment: debt , gross_profits: debt, gross_profits_overall: debt, net_profit: debt})
+  newData.push({ group: "Early Reviewer Program Fee", other_transaction_fee: early_reviewer_program_fee, gross_profits: early_reviewer_program_fee, gross_profits_overall: early_reviewer_program_fee, net_profit: early_reviewer_program_fee})
+  newData.push({ group: "Vine Enrollment Fee", other_adjustment: vine_Enrollment_Fee, gross_profits: vine_Enrollment_Fee, gross_profits_overall: vine_Enrollment_Fee, net_profit: vine_Enrollment_Fee })
+  newData.push({ group: "Coupon Redemption Fee", other_transaction_fee: coupom_fee, gross_profits:coupom_fee, gross_profits_overall: coupom_fee, net_profit: coupom_fee})
+  newData.push({ group: "Lightning Deal Fee", other_transaction_fee: lighting_deal_fee, gross_profits: lighting_deal_fee, gross_profits_overall: lighting_deal_fee, net_profit: lighting_deal_fee})
+  newData.push({ group: "Commission Adjustment", other_adjustment: commisstion_adjustment, gross_profits: commisstion_adjustment, gross_profits_overall: commisstion_adjustment, net_profit: commisstion_adjustment})
+  newData.push({ group: "Fee Adjustment - Weight and Dimension Change", fullfillment_fees: fee_adjustment, gross_profits: fee_adjustment, gross_profits_overall: fee_adjustment, net_profit: fee_adjustment})
+  newData.push({ group: "FBA Inventory Reimbursement - Fee Correction", other_adjustment: fba_inventory, gross_profits: fba_inventory, gross_profits_overall: fba_inventory, net_profit: fba_inventory })
+  newData.push({ group: "Retrocharge", marketplace_withheld_tax: retrocharge, gross_profits:0, gross_profits_overall:0, net_profit:0})
+  newData.push({ group: "Retrocharge Reversal", marketplace_withheld_tax: retrocharge_reversal, gross_profits:0, gross_profits_overall:0, net_profit:0})
+  newData.push({ group: "Other", other_adjustment: other, gross_profits: other, gross_profits_overall: other, net_profit: other })
+  newData.push({ group: "FBA Amazon-Partnered Carrier Shipment Fee", other_adjustment: fba_amazon, gross_profits: fba_amazon, gross_profits_overall: fba_amazon, net_profit: fba_amazon })
+  newData.push({ group: "FBA International Shipping Charge", other_adjustment: fba_international, gross_profits: fba_international, gross_profits_overall: fba_international, net_profit: fba_international})
+  newData.push({ group: "Advertising Payment", other_transaction_fee: advertising_payment, gross_profits: advertising_payment,gross_profits_overall: advertising_payment, net_profit: advertising_payment })
+  newData.push({ group: "Previous Storage Fee", other_adjustment: previous_storage_fee, gross_profits: previous_storage_fee, gross_profits_overall: previous_storage_fee, net_profit: previous_storage_fee })
+  newData.push({ group: "Surcharge Fee", other_adjustment: surcharge_fee,gross_profits: surcharge_fee, gross_profits_overall: surcharge_fee, net_profit: surcharge_fee  })
+  newData.push({ group: "Disposal Fee", other_adjustment: disposal_fee, gross_profits: disposal_fee, gross_profits_overall: disposal_fee, net_profit: disposal_fee})
+  newData.push({ group: "Return Fee", other_adjustment: return_fee, gross_profits: return_fee, gross_profits_overall: return_fee, net_profit: return_fee })
+  newData.push({ group: "Transfer Payment", other_adjustment: transfer ,gross_profits: transfer, gross_profits_overall: transfer, net_profit: transfer })
   newData.push({})
   // tính statistic cho dòng total
   let total_sales_quantity = newData.reduce((acc, obj) => acc + (obj.sale_quantity || 0), 0);
@@ -867,10 +860,10 @@ let splitEmptySku = async (data, payments) => {
   other_adjustment: other_adjustment,gross_profits: gross_profits,ads: ads,storage_fee: storage_fee,disposal_fee: disposal_fee_total,vine_fee: vine_fee,aged_inventory_surcharge: aged_inventory_surcharge,
   gross_profits_overall: gross_profits_overall, mcf_quantity: mcf_quantity,lost_quantity_by_aw: lost_quantity_by_aw,adjusted_quantity_by_aw: adjusted_quantity_by_aw,removal_liquidations: removal_liquidations,
   removal_return: removal_return,removal_disposal: removal_disposal,customer_return_sellable: customer_return_sellable,customer_return_unsellable: customer_return_unsellable,
-  sellable_return_percent: sellable_return_percent,cogs_shipped :cogs_shipped, cogs_return: cogs_return, cogs_lost: cogs_lost, cogs_adjusted:cogs_adjusted, cogs_removal:cogs_removal,
-  tcogs: tcogs, missing_received_quantity:missing_received_quantity, shipmentID: undefined,quantity_found: quantity_found, reimbursed_quantity: reimbursed_quantity, 
+  sellable_return_percent: sellable_return_percent, missing_received_quantity:missing_received_quantity, shipmentID: undefined,quantity_found: quantity_found, reimbursed_quantity: reimbursed_quantity, 
   not_reimbursed_quantity: not_reimbursed_quantity, reimbursement_for_missing_quantity: reimbursement_for_missing_quantity, cogs_for_missing_quantity:cogs_for_missing_quantity,
-  reconcile_cogs: reconcile_cogs, business_expense: business_expense, net_profit: net_profit})
+  reconcile_cogs: reconcile_cogs,cogs_shipped :cogs_shipped, cogs_return: cogs_return, cogs_lost: cogs_lost, cogs_adjusted:cogs_adjusted, cogs_removal:cogs_removal,
+  tcogs: tcogs, business_expense: business_expense, net_profit: net_profit})
   return newData;
 }
 let handleRemoveDuplicated = async (records) => {
@@ -952,7 +945,7 @@ let handleRemoveDuplicated = async (records) => {
 let findRemainFields = async (splitEmptySkuData, payments) => {
   splitEmptySkuData.forEach(sku => {
     sku.net_profit = sku.gross_profits_overall + sku.tcogs
-    sku.group = undefined;
+    // sku.group = undefined;
     let tmp = payments.filter(p => p.sku == sku.sku && p.description == "FBA Inventory Reimbursement - Lost:Inbound")
     sku.reimbursed_quantity = 0;
     sku.reimbursement_for_missing_quantity = 0;
@@ -1027,7 +1020,8 @@ let GenerateFile = async () => {
       row['SKU'],
       row['FNSKU'],
       row['Price'],
-      row['Portfolio']
+      row['Portfolio'],
+      row['Product Group']
     );
   });
 
@@ -1150,8 +1144,8 @@ let GenerateFile = async () => {
     "Marketplace Withheld Tax", "Referral Fees", "Fulfillment Fees", "Refund Commission", "Other Transaction Fees", "Other Adjustment", "Gross Profit (by product)", "Ads", "Storage Fee",
     "Removal Fee", "Vine Fee", "Aged-inventory Surcharge", "Gross Profit (overall)", "MCF Quantity", "Lost/Damaged Quantity", "Adjusted Quantity", "Removal Quantity of Sellable Units (Liquidations)"
     , "Removal Quantity of Sellable Units (Return)", "Removal Quantity of Sellable Units (Disposal)", "Customer Return Quantity (Sellable)", "Customer Return Quantity (Unsellable)", "% Sellable Returns",
-    "COGS Shipped", "COGS Customer Return", "COGS Lost/Damaged", "COGS Adjusted", "COGS Removal", "TCOGS", "Missing Received Quantity", "Shipment ID", "Quantity Found", "Reimbursed Quantity", "Quantity is Not Reimbursed",
-    "Reimbursement for Missing Quantity", "COGS for Missing Quantity", "Reconcile COGS", "Other Expenses", "Net Profit"]], { origin: "A1" });
+    "Discrepancy Quantity", "Shipment ID", "Quantity Found", "Reimbursed Quantity", "Quantity is Not Reimbursed",
+    "Reimbursement for Missing Quantity", "COGS for Missing Quantity", "COGS Reconcile","COGS Shipped", "COGS Customer Return", "COGS Lost/Damaged", "COGS Adjusted", "COGS Removal", "TCOGS", "Other Expenses", "Net Profit"]], { origin: "A1" });
   XLSX.writeFile(newWorkbook, 'P&L.xlsx');
 }
 
