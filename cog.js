@@ -2,7 +2,7 @@ const XLSX = require('xlsx');
 
 const workbook = XLSX.readFile('Payment 12.07.22 - 05.05.23 (Thành).xlsx');
 const il = XLSX.readFile("Inventory-Ledger-18.05.22-18.05.23.xlsx")
-const wb_inventory = XLSX.readFile("Inventory 06.05.xlsx")
+const wb_inventory = XLSX.readFile("Inventory-03.05.xlsx")
 const { getJsDateFromExcel } = require("excel-date-to-js");
 
 class InventoryLedger {
@@ -70,13 +70,28 @@ class Cog {
         this.next_shipment_cog = next_shipment_cog
     }
 }
+class OriginalData{
+    constructor(date, sku, fnsku, shipmentID, nextShipmentID, sale_quantity, total_inventory, calculated_inventory, actual_inventory,
+        difference) {
+        this.date = date;
+        this.sku = sku;
+        this.fnsku = fnsku;
+        this.shipmentID = shipmentID;
+        this.nextShipmentID = nextShipmentID;
+        this.sale_quantity = sale_quantity;
+        this.total_inventory = total_inventory;
+        this.calculated_inventory = calculated_inventory
+        this.actual_inventory = actual_inventory
+        this.difference = difference;
+    }
+}
 
 function getSKUData(inventoryLedger, inventory) {
     const inventoryLedgerList = [];
     let skuData = {}
     inventoryLedger.forEach(element => {
         const { date, fnsku, msku, quantity, disposition, event_type, referenceID, date_time } = element;
-        if (event_type === 'Receipts' && referenceID != undefined && new Date(date_time) < new Date("05/06/2023")) {
+        if (event_type === 'Receipts' && referenceID != undefined && new Date(date_time) < new Date("05/03/2023")) {
             inventoryLedgerList.push({
                 date: date_time, msku, fnsku,
                 shipmentID: referenceID,
@@ -202,7 +217,7 @@ function getListTransaction(inventoryLedger) {
     const transactions = [];
     inventoryLedger.forEach(element => {
         const { date_time, fnsku, msku, quantity, disposition, event_type } = element;
-        if (new Date(date_time) < new Date("05/06/2023") && disposition === 'SELLABLE' && (event_type === 'Shipments' || event_type === 'CustomerReturns' ||
+        if (new Date(date_time) < new Date("05/03/2023") && disposition === 'SELLABLE' && (event_type === 'Shipments' || event_type === 'CustomerReturns' ||
             event_type === 'Adjustments' || event_type === 'VendorReturns')) {
             transactions.push({
                 date: date_time,
@@ -327,13 +342,36 @@ const handleWriteAllShipment = async (rs) => {
     })
     return rs;
 }
-
+const findOriginalData = async(data, inventory)=>{
+    let result = data.map(obj => Object.assign({}, obj)); 
+    result.forEach(d=>{
+        d.date = undefined
+        d.listShipmentID = 0
+        d.listQuantityOfShipment =0
+        let tmp = inventory.filter(i => i.sku === d.sku)
+        for(var i =0 ;i< tmp.length ;i++){
+            d.listShipmentID += (tmp[i].afn_fulfillable_quantity + tmp[i].afn_reserved_quantity)
+        }
+        d.listQuantityOfShipment = d.total_inventory - d.listShipmentID;
+    })
+    result[0].date = "03/05/2023";
+    return result.map(obj => new OriginalData(
+        obj.date,
+        obj.sku,
+        obj.fnsku,
+        obj.shipmentID,
+        obj.nextShipmentID,
+        obj.sale_quantity,
+        obj.data,
+        obj.total_inventory,
+        obj.listShipmentID,
+        obj.listQuantityOfShipment
+    ));
+}
 
 GenerateFile = async () => {
-    const worksheet = workbook.Sheets[0];
     const ws1 = il.Sheets["240848019495"]
-    const ws2 = wb_inventory.Sheets["Inventory 06.05"]
-
+    const ws2 = wb_inventory.Sheets["Inventory 03.05"]
     // Use XLSX.utils.sheet_to_json() to convert the worksheet to a JSON array
 
     const arr8 = XLSX.utils.sheet_to_json(ws1)
@@ -366,13 +404,19 @@ GenerateFile = async () => {
     let transaction_shipment = result[1];
 
     let newRusult = await handleWriteAllShipment(rs);
-
+    let orignalData = await findOriginalData(newRusult, inventory);
+    console.log(newRusult);
     const newWorksheet = XLSX.utils.json_to_sheet(newRusult);
     const nw2 = XLSX.utils.json_to_sheet(transaction_shipment);
     const nw3 = XLSX.utils.json_to_sheet(date)
+    const nw4 = XLSX.utils.json_to_sheet(orignalData)
     XLSX.utils.book_append_sheet(workbook, newWorksheet, "Giao dịch phát sinh");
     XLSX.utils.book_append_sheet(workbook, nw2, "Danh sách giao dịch bổ sung");
     XLSX.utils.book_append_sheet(workbook, nw3, "Ngày chuyển giao");
+    XLSX.utils.book_append_sheet(workbook, nw4, "original inventory statistics")
+    XLSX.utils.sheet_add_aoa(nw4, [["date", "sku", "fnsku", "shipment id", "next shipment id", "receipts (total received quantity calculate from current shipment)", "transaction (total transaction calculate from current shipment)",
+     "calculated inventory (inventory quantity on 08/06 according to calculation)", "actual inventory (inventory quantity on 08/06 according to actual)",
+        "difference"]], { origin: "A1" });
     XLSX.writeFile(workbook, 'output.xlsx');
 }
 

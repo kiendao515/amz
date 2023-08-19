@@ -1,30 +1,37 @@
-function findSumCombinations(arr, targetSum) {
-  const combinations = [];
+const fs = require('fs');
+const csv = require('csv-parser');
+const XLSX = require('xlsx');
 
-  function findSubsets(startIndex, currentCombination, currentSum) {
-    if (currentSum === targetSum) {
-      combinations.push(currentCombination.slice());
+const inputFilePath = './data/Payment-T3.csv';
+const outputFilePath = 'output.xlsx';
+
+const workbook = XLSX.utils.book_new();
+
+const rows = [];
+
+fs.createReadStream(inputFilePath)
+  .pipe(csv())
+  .on('data', (row) => {
+    const firstAttribute = Object.keys(row)[0];
+    let x= row[firstAttribute]
+    console.log(x);
+    // Process each row of CSV data and store in an array
+    rows.push(row);
+  })
+  .on('end', () => {
+    if (rows.length > 0) {
+      // Create a sheet with the processed rows
+      if (!workbook.SheetNames.includes('Payment-T3')) {
+        workbook.SheetNames.push('Payment-T3');
+      }
+      const sheet = XLSX.utils.json_to_sheet(rows);
+      workbook.Sheets['Payment-T3'] = sheet;
+
+      // Write the workbook to an XLSX file
+      const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' });
+      fs.writeFileSync(outputFilePath, excelBuffer);
+      console.log('CSV to XLSX conversion complete.');
+    } else {
+      console.log('No data found in the CSV file.');
     }
-
-    for (let i = startIndex; i < arr.length; i++) {
-      currentCombination.push(arr[i]);
-      currentSum += arr[i];
-      findSubsets(i + 1, currentCombination, currentSum);
-      currentCombination.pop();
-      currentSum -= arr[i];
-    }
-  }
-
-  findSubsets(0, [], 0);
-  return combinations;
-}
-
-// Sử dụng hàm findSumCombinations với dữ liệu mẫu
-const numbers = [-1, -1, 1, -1, -2, -3, 1, -1];
-const targetSum = -3;
-
-const result = findSumCombinations(numbers, targetSum);
-console.log("Các cách tổng các số bằng", targetSum, "là:");
-result.forEach(combination => {
-  console.log(combination);
-});
+  });

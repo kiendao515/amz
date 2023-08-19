@@ -629,6 +629,7 @@ GenerateFile = async () => {
     }
     skuData = XLSX.utils.json_to_sheet(skus)
     const returnSheet = XLSX.utils.json_to_sheet(returns)
+    console.log("return",returns);
     XLSX.utils.book_append_sheet(workbook, returnSheet, "inventory statistics");
     workbook.Sheets['Danh sách giao dịch bổ sung'] = newSheet; // Replace 'Sheet1' with the actual sheet name
     workbook.Sheets['Ngày chuyển giao'] = newSheetDate;
@@ -642,8 +643,8 @@ GenerateFile = async () => {
     workbook.Sheets['shipment list'] = newSheetDate
     workbook.SheetNames[workbook.SheetNames.indexOf("Danh sách giao dịch bổ sung")] = "transaction list";
     workbook.Sheets['transaction list'] = newSheet
-    workbook.SheetNames[workbook.SheetNames.indexOf("Giao dịch phát sinh")] = "original inventory statistics"
-    workbook.Sheets['original inventory statistics'] = skuData
+    workbook.SheetNames[workbook.SheetNames.indexOf("Giao dịch phát sinh")] = "original inventory statisticss"
+    workbook.Sheets['original inventory statisticss'] = skuData
     // đổi tên các cột trong sheets ngày chuyển giao
     XLSX.utils.sheet_add_aoa(newSheetDate, [["sku", "fnsku", "shipment id", "cogs", "from date", "to date", "remainder", "next shipment id", "shipment list"]], { origin: "A1" });
     XLSX.utils.sheet_add_aoa(newSheet, [["date", "sku", "fnsku", "type", "quantity", "disposition", "received shipment id","transferred shipment id", "cogs"]], { origin: "A1" });
