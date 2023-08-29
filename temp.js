@@ -283,11 +283,12 @@ const findDate = async (skuData, transactions) => {
                 }
             }
         } else if (element.data === 0 && element.sku === 'OO-7IRG-7LLM') {
-            const matchingTransaction = transactions.slice().reverse().find(t => (t.sku === element.sku));
-            let index = transactions.indexOf(matchingTransaction)
-            console.log("data=0",index);
-            if (index) {
-                transactions[index].shipmentID = element.shipmentID
+            const matchingTransaction = transactions.slice().reverse().find(t => (t.sku === element.sku && t.type != "Receipts"));
+            let i = transactions.indexOf(matchingTransaction)
+            element.nextShipmentID = element.listShipmentID[index]
+            console.log("data=0",element.listShipmentID[index-1],element);
+            if (i) {
+                transactions[i].shipmentID = element.shipmentID
                 const d = new Date(matchingTransaction.date);
                 d.setFullYear(d.getFullYear() + 3);
                 cogs.push(new Cog(
@@ -298,19 +299,18 @@ const findDate = async (skuData, transactions) => {
                     new Date(matchingTransaction.date),
                     new Date(d),
                     0,
-                    null,
+                    element.listShipmentID[index-1],
                     null
                 ));
+                let rs = await findNextDate(element, transactions,0)
+                cogs.push(...rs)
             }
-        }else if(element.data === 0){
-            console.log("data=1",element);
         }
     }
     return [cogs, transactions];
 };
 
 const findNextDate = async (skuData, transactions, remainder) => {
-
     const cogs = [];
     const listTransactionOfSku = transactions.filter(t => t.sku === skuData.sku && t.type !== 'Receipts');
     let tmp = [];
@@ -343,6 +343,9 @@ const findNextDate = async (skuData, transactions, remainder) => {
         for (let j = 0; j < totalQuantityOfSku.length; j++) {
             checkTotal += totalQuantityOfSku[j].quantity;
         }
+        // if(skuData.sku == "OO-7IRG-7LLM"){
+        //     console.log("ảo ma",skuData,-tmp[index].quantityOfShipment,checkTotal,totalQuantityOfSku);
+        // }
         if (-tmp[index].quantityOfShipment >= checkTotal) {
             for (let j = 0; j < filteredTransactions.length; j++) {
                 const t = filteredTransactions[j];
@@ -350,9 +353,9 @@ const findNextDate = async (skuData, transactions, remainder) => {
                     total += t.quantity;
                     if (-tmp[index].quantityOfShipment >= total) {
                         t.shipmentID = tmp[index + 1]?.shipmentID;
-                        // if (skuData.sku === 'BK-SRB5-DBHK') {
-                        //     console.log("dataaaa", filteredTransactions);
-                        // }
+                        if (skuData.sku === 'OO-7IRG-7LLM') {
+                            console.log("dataaaa", filteredTransactions);
+                        }
                         tmp[index].date = new Date(t.date);
                         if (tmp[index + 1]?.shipmentID != undefined) {
                             const d = new Date(t.date);
@@ -428,6 +431,7 @@ const findFinalDate = async (result, skuData, listSku) => {
                 rs[i].to_date = ExcelDateToJSDate(rs[i].to_date)
             }
         }
+        rs.sort((a, b) => b.date - a.date);
         rs.sort((a, b) => {
             const nextShipmentIDA = a.nextShipmentID?.toLowerCase();
             const shipmentIDB = b.shipmentID?.toLowerCase();
@@ -532,7 +536,7 @@ let findDiffereceFromInventory = async (futureDate, inventoryData, transaction, 
 let writeCogs = async (url, finalDate, transactions, skus) => {
     const res = await axios.get(url, { responseType: "arraybuffer" });
     const workbook = XLSX.read(res.data);
-    const cogs = XLSX.utils.sheet_to_json(workbook.Sheets["Sheet1"])
+    const cogs = XLSX.utils.sheet_to_json(workbook.Sheets["Cost of Goods"])
     for (var i = 0; i < finalDate.length; i++) {
         let cogDataRow = cogs.filter(c => c['Sku'] === finalDate[i].sku && c['Shipment ID'] === finalDate[i].current_shipment)[0]
         if (cogDataRow) {
@@ -627,7 +631,8 @@ GenerateFile = async () => {
     // tìm các cột còn lại 
     const returns = await findDiffereceFromInventory(tmp, inventoryData, currentDate[1], finalDate)
     // tìm cogs và điền cogs
-    let finalDateWithCogs = await writeCogs("https://dl.dropboxusercontent.com/scl/fi/rei6i0wpbwocuxyym9xzd/COGS.xlsx?rlkey=hjy92xapyauogrgwplfbobmvq&dl=1",
+    //https://www.dropbox.com/scl/fi/ugm3pgv1d9b6vdqu8dyj1/COGS-Code-Web.xlsx?rlkey=b3ol7hpetuiwav9sxr6m2p0a4&dl=0
+    let finalDateWithCogs = await writeCogs("https://dl.dropboxusercontent.com/scl/fi/ugm3pgv1d9b6vdqu8dyj1/COGS-Code-Web.xlsx?rlkey=b3ol7hpetuiwav9sxr6m2p0a4&dl=1",
         finalDate, currentDate[1], returns)
     const newSheetDate = XLSX.utils.json_to_sheet(finalDateWithCogs[0])
     const newSheet = XLSX.utils.json_to_sheet(finalDateWithCogs[1]);
@@ -685,8 +690,8 @@ GenerateFile = async () => {
         usage: delete_cols(ws, 4, 3); // deletes columns E-G and shifts everything after G to the left by 3 columns*/
     delete_cols(skuData, 0, 1)
     delete_cols(skuData, 4, 5)
-    // delete_cols(returnSheet, 0, 1)
-    // delete_cols(returnSheet, 3, 5)
+    //delete_cols(returnSheet, 0, 1)
+    //delete_cols(returnSheet, 3, 5)
     XLSX.writeFile(workbook, 'final.xlsx');
 
 }

@@ -44,7 +44,7 @@ class Result {
 }
 
 class Transaction {
-    constructor(date, sku, fnsku, type, quantity, disposition, shipmentID) {
+    constructor(date, sku, fnsku, type, quantity, disposition, shipmentID, shipment_recept) {
         this.date = date;
         this.sku = sku;
         this.fnsku = fnsku;
@@ -52,6 +52,7 @@ class Transaction {
         this.quantity = quantity;
         this.disposition = disposition;
         this.shipmentID = shipmentID;
+        this.shipment_recept = shipment_recept;
     }
 }
 
@@ -70,7 +71,7 @@ class Cog {
         this.next_shipment_cog = next_shipment_cog
     }
 }
-class OriginalData{
+class OriginalData {
     constructor(date, sku, fnsku, shipmentID, nextShipmentID, sale_quantity, total_inventory, calculated_inventory, actual_inventory,
         difference) {
         this.date = date;
@@ -216,9 +217,9 @@ function parseDate(input) {
 function getListTransaction(inventoryLedger) {
     const transactions = [];
     inventoryLedger.forEach(element => {
-        const { date_time, fnsku, msku, quantity, disposition, event_type } = element;
+        const { date_time, fnsku, msku, quantity, disposition, event_type, referenceID } = element;
         if (new Date(date_time) < new Date("05/03/2023") && disposition === 'SELLABLE' && (event_type === 'Shipments' || event_type === 'CustomerReturns' ||
-            event_type === 'Adjustments' || event_type === 'VendorReturns')) {
+            event_type === 'Adjustments' || event_type === 'VendorReturns' || event_type === "Receipts")) {
             transactions.push({
                 date: date_time,
                 sku: msku,
@@ -226,11 +227,11 @@ function getListTransaction(inventoryLedger) {
                 type: event_type,
                 quantity: quantity,
                 disposition: disposition,
-                shipmentID: null
+                shipmentID: null,
+                shipment_recept: event_type === 'Receipts' ? referenceID : null
             });
         }
     });
-
     return transactions.map(t => new Transaction(
         t.date,
         t.sku,
@@ -238,10 +239,12 @@ function getListTransaction(inventoryLedger) {
         t.type,
         t.quantity,
         t.disposition,
-        t.shipmentID
+        t.shipmentID,
+        t.shipment_recept
     ));
 }
 const findPreviousDate = async (skuData, transaction, remainder, currentDate) => {
+    //transaction = transaction.filter(t => t.type !== "Receipts")
     let listTransactionOfSku = transaction.filter(t => t.sku === skuData.sku);
     let tmp = [];
     let rs = [];
@@ -264,26 +267,31 @@ const findPreviousDate = async (skuData, transaction, remainder, currentDate) =>
         }
 
         let total = 0;
+        filteredTransactions = filteredTransactions.filter(t => t.sku === skuData.sku)
         for (let j = 0; j < filteredTransactions.length; j++) {
             const t = filteredTransactions[j];
-            if (t.sku === skuData.sku) {
-                total += t.quantity;
-                if (-tmp[index].quantityOfShipment >= total) {
-                    t.shipmentID = tmp[index].shipmentID;
-                    tmp[index].date = new Date(t.date)
-                    if (index == 0) {
-                        var currentDateTime = new Date(currentDate);
-                        var previousDateTime = new Date(currentDateTime.getTime() - (24 * 60 * 60 * 1000));
-                        var previousDateTimeString = previousDateTime.toISOString();
-                        rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date), new Date(previousDateTimeString), total + tmp[index].quantityOfShipment, skuData.shipmentID, null));
-                    } else {
-                        var currentDateTime = new Date(tmp[index - 1].date);
-                        var previousDateTime = new Date(currentDateTime.getTime() - (24 * 60 * 60 * 1000));
-                        var previousDateTimeString = previousDateTime.toISOString();
-                        rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date), new Date(previousDateTimeString), total + tmp[index].quantityOfShipment, tmp[index - 1]?.shipmentID, null));
-                    }
-                    break;
+            total += t.quantity;
+            if (-tmp[index].quantityOfShipment >= total) {
+                t.shipmentID = tmp[index].shipmentID;
+                tmp[index].date = new Date(t.date)
+                if (index == 0) {
+                    var currentDateTime = new Date(currentDate);
+                    var previousDateTime = new Date(currentDateTime.getTime() - (24 * 60 * 60 * 1000));
+                    var previousDateTimeString = previousDateTime.toISOString();
+                    rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date), new Date(previousDateTimeString), total + tmp[index].quantityOfShipment, skuData.shipmentID, null));
+                } else {
+                    var currentDateTime = new Date(tmp[index - 1].date);
+                    var previousDateTime = new Date(currentDateTime.getTime() - (24 * 60 * 60 * 1000));
+                    var previousDateTimeString = previousDateTime.toISOString();
+                    rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date), new Date(previousDateTimeString), total + tmp[index].quantityOfShipment, tmp[index - 1]?.shipmentID, null));
                 }
+                break;
+            }
+            if(j == (filteredTransactions.length -1) &&  -tmp[index].quantityOfShipment < total){
+                var currentDateTime = new Date(tmp[index - 1]?.date);
+                t.shipmentID = tmp[index].shipmentID;
+                rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date), 
+                currentDateTime, total + tmp[index].quantityOfShipment, tmp[index - 1]?.shipmentID, null));
             }
         }
 
@@ -303,6 +311,7 @@ const findPreviousDate = async (skuData, transaction, remainder, currentDate) =>
 };
 
 const findDate = async (skuData, transaction) => {
+    transaction = transaction.filter(t => t.type !== "Receipts")
     const cogs = [];
     for (let i = 0; i < skuData.length; i++) {
         const element = skuData[i];
@@ -324,8 +333,8 @@ const findDate = async (skuData, transaction) => {
                     }
                 }
             }
-        }else {
-            let tmp = transaction.filter(t=> t.sku === element.sku)
+        } else {
+            let tmp = transaction.filter(t => t.sku === element.sku)
             let rs = await findPreviousDate(element, transaction, 0, new Date(tmp[0]?.date));
             cogs.push(...rs)
         }
@@ -342,14 +351,14 @@ const handleWriteAllShipment = async (rs) => {
     })
     return rs;
 }
-const findOriginalData = async(data, inventory)=>{
-    let result = data.map(obj => Object.assign({}, obj)); 
-    result.forEach(d=>{
+const findOriginalData = async (data, inventory) => {
+    let result = data.map(obj => Object.assign({}, obj));
+    result.forEach(d => {
         d.date = undefined
         d.listShipmentID = 0
-        d.listQuantityOfShipment =0
+        d.listQuantityOfShipment = 0
         let tmp = inventory.filter(i => i.sku === d.sku)
-        for(var i =0 ;i< tmp.length ;i++){
+        for (var i = 0; i < tmp.length; i++) {
             d.listShipmentID += (tmp[i].afn_fulfillable_quantity + tmp[i].afn_reserved_quantity)
         }
         d.listQuantityOfShipment = d.total_inventory - d.listShipmentID;
@@ -398,10 +407,11 @@ GenerateFile = async () => {
         )
     })
     let transations = getListTransaction(inventoryLedger)
+    let transaction_receipts = transations.filter(t => t.type === "Receipts")
     let rs = getSKUData(inventoryLedger, inventory);
     let result = await findDate(rs, transations)
     let date = result[0];
-    let transaction_shipment = result[1];
+    let transaction_shipment = [...result[1], ...transaction_receipts];
 
     let newRusult = await handleWriteAllShipment(rs);
     let orignalData = await findOriginalData(newRusult, inventory);
@@ -415,7 +425,7 @@ GenerateFile = async () => {
     XLSX.utils.book_append_sheet(workbook, nw3, "Ngày chuyển giao");
     XLSX.utils.book_append_sheet(workbook, nw4, "original inventory statistics")
     XLSX.utils.sheet_add_aoa(nw4, [["date", "sku", "fnsku", "shipment id", "next shipment id", "receipts (total received quantity calculate from current shipment)", "transaction (total transaction calculate from current shipment)",
-     "calculated inventory (inventory quantity on 08/06 according to calculation)", "actual inventory (inventory quantity on 08/06 according to actual)",
+        "calculated inventory (inventory quantity on 08/06 according to calculation)", "actual inventory (inventory quantity on 08/06 according to actual)",
         "difference"]], { origin: "A1" });
     XLSX.writeFile(workbook, 'output.xlsx');
 }
