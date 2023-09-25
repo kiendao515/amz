@@ -1,8 +1,8 @@
 const XLSX = require('xlsx');
 
 const workbook = XLSX.readFile('Payment 12.07.22 - 05.05.23 (Thành).xlsx');
-const il = XLSX.readFile("Inventory-Ledger-18.05.22-18.05.23.xlsx")
-const wb_inventory = XLSX.readFile("Inventory-03.05.xlsx")
+const il = XLSX.readFile("Inventory-Ledger-01.02.22-13.08.23.xlsx")
+const wb_inventory = XLSX.readFile("Inventory-06.05.xlsx")
 const { getJsDateFromExcel } = require("excel-date-to-js");
 
 class InventoryLedger {
@@ -92,7 +92,7 @@ function getSKUData(inventoryLedger, inventory) {
     let skuData = {}
     inventoryLedger.forEach(element => {
         const { date, fnsku, msku, quantity, disposition, event_type, referenceID, date_time } = element;
-        if (event_type === 'Receipts' && referenceID != undefined && new Date(date_time) < new Date("05/03/2023")) {
+        if (event_type === 'Receipts' && referenceID != undefined && new Date(date_time) < new Date("05/06/2023")) {
             inventoryLedgerList.push({
                 date: date_time, msku, fnsku,
                 shipmentID: referenceID,
@@ -218,7 +218,7 @@ function getListTransaction(inventoryLedger) {
     const transactions = [];
     inventoryLedger.forEach(element => {
         const { date_time, fnsku, msku, quantity, disposition, event_type, referenceID } = element;
-        if (new Date(date_time) < new Date("05/03/2023") && disposition === 'SELLABLE' && (event_type === 'Shipments' || event_type === 'CustomerReturns' ||
+        if (new Date(date_time) < new Date("05/06/2023") && disposition === 'SELLABLE' && (event_type === 'Shipments' || event_type === 'CustomerReturns' ||
             event_type === 'Adjustments' || event_type === 'VendorReturns' || event_type === "Receipts")) {
             transactions.push({
                 date: date_time,
@@ -287,11 +287,11 @@ const findPreviousDate = async (skuData, transaction, remainder, currentDate) =>
                 }
                 break;
             }
-            if(j == (filteredTransactions.length -1) &&  -tmp[index].quantityOfShipment < total){
+            if (j == (filteredTransactions.length - 1) && -tmp[index].quantityOfShipment < total) {
                 var currentDateTime = new Date(tmp[index - 1]?.date);
                 t.shipmentID = tmp[index].shipmentID;
-                rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date), 
-                currentDateTime, total + tmp[index].quantityOfShipment, tmp[index - 1]?.shipmentID, null));
+                rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date),
+                    currentDateTime, total + tmp[index].quantityOfShipment, tmp[index - 1]?.shipmentID, null));
             }
         }
 
@@ -317,19 +317,30 @@ const findDate = async (skuData, transaction) => {
         const element = skuData[i];
         let total = 0;
         if (element.data > 0) {
-            for (let j = 0; j < transaction.length; j++) {
-                const t = transaction[j];
-                if (t.sku === element.sku) {
-                    total += t.quantity;
-                    if (-element.data >= total) {
-                        let d = new Date(t.date)
-                        d.setFullYear(d.getFullYear() + 3)
-                        t.shipmentID = element.shipmentID
-                        cogs.push(new Cog(t.sku, element.fnsku, element.shipmentID, null, new Date(t.date), new Date(d), total + element.data,
-                            element.nextShipmentID, null));
-                        let rs = await findPreviousDate(element, transaction, total + element.data, t.date);
-                        cogs.push(...rs)
-                        break;
+            if (element.total_inventory == 0 && element.sku == "Pitter-Slicer1-Watermelon") {
+                let tmp = transaction.filter(t => t.sku == element.sku).reverse()[0]
+                tmp.shipmentID = element.shipmentID;
+                let d = new Date(tmp.date)
+                d.setFullYear(d.getFullYear() + 3)
+                cogs.push(new Cog(tmp.sku, element.fnsku, element.shipmentID, null, new Date(tmp.date), new Date(d), total + element.data,
+                    element.nextShipmentID, null));
+                let rs = await findPreviousDate(element, transaction, total + element.data, tmp.date);
+                cogs.push(...rs)
+            } else {
+                for (let j = 0; j < transaction.length; j++) {
+                    const t = transaction[j];
+                    if (t.sku === element.sku) {
+                        total += t.quantity;
+                        if (-element.data >= total) {
+                            let d = new Date(t.date)
+                            d.setFullYear(d.getFullYear() + 3)
+                            t.shipmentID = element.shipmentID
+                            cogs.push(new Cog(t.sku, element.fnsku, element.shipmentID, null, new Date(t.date), new Date(d), total + element.data,
+                                element.nextShipmentID, null));
+                            let rs = await findPreviousDate(element, transaction, total + element.data, t.date);
+                            cogs.push(...rs)
+                            break;
+                        }
                     }
                 }
             }
@@ -363,7 +374,7 @@ const findOriginalData = async (data, inventory) => {
         }
         d.listQuantityOfShipment = d.total_inventory - d.listShipmentID;
     })
-    result[0].date = "03/05/2023";
+    result[0].date = "06/05/2023";
     return result.map(obj => new OriginalData(
         obj.date,
         obj.sku,
@@ -379,8 +390,8 @@ const findOriginalData = async (data, inventory) => {
 }
 
 GenerateFile = async () => {
-    const ws1 = il.Sheets["240848019495"]
-    const ws2 = wb_inventory.Sheets["Inventory 03.05"]
+    const ws1 = il.Sheets["257487019573"]
+    const ws2 = wb_inventory.Sheets["Inventory 06.05"]
     // Use XLSX.utils.sheet_to_json() to convert the worksheet to a JSON array
 
     const arr8 = XLSX.utils.sheet_to_json(ws1)

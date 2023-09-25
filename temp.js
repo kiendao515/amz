@@ -235,11 +235,11 @@ let findFutureDate = async (skuData, transations) => {
         });
         let referenceIDs = distinctRecords.map(item => item.shipment_recept);
         console.log("hjhj", referenceIDs, sku.listShipmentID);
-        let tm = [... referenceIDs]
+        let tm = [...referenceIDs]
         sku.listShipmentID = sku.listShipmentID.split(',')
         sku.listQuantityOfShipment = sku.listQuantityOfShipment.split(',')
         // tìm quantity tương ứng shipment
-        let tmp =[]
+        let tmp = []
         tm.forEach(shipmentID => {
             const filteredInventory = futureTransactions.filter(item => item.shipment_recept === shipmentID);
             const saleQuantity = filteredInventory.reduce((total, item) => total + item.quantity, 0);
@@ -248,18 +248,18 @@ let findFutureDate = async (skuData, transations) => {
         // tìm các phần tử trong mảng referenceIDS đã xuất hiện trong sku.listshipment để update quantity các shipment này
         const shipmentExistedBefore = referenceIDs.filter(s => sku.listShipmentID.includes(s));
         const indexesInShipmentExistedBefore = shipmentExistedBefore.map(item => tm.indexOf(item))
-        if(indexesInShipmentExistedBefore.length !=0){
-            for(var i =0;i< shipmentExistedBefore.length;i++){
-                let shipmentIndex= sku.listShipmentID.indexOf(shipmentExistedBefore[i]);
-                sku.listQuantityOfShipment[shipmentIndex]= parseInt(sku.listQuantityOfShipment[shipmentIndex])+ parseInt(tmp[indexesInShipmentExistedBefore[i]])
-                referenceIDs.splice(referenceIDs.indexOf(shipmentExistedBefore[i]),1)
+        if (indexesInShipmentExistedBefore.length != 0) {
+            for (var i = 0; i < shipmentExistedBefore.length; i++) {
+                let shipmentIndex = sku.listShipmentID.indexOf(shipmentExistedBefore[i]);
+                sku.listQuantityOfShipment[shipmentIndex] = parseInt(sku.listQuantityOfShipment[shipmentIndex]) + parseInt(tmp[indexesInShipmentExistedBefore[i]])
+                referenceIDs.splice(referenceIDs.indexOf(shipmentExistedBefore[i]), 1)
             }
         }
-        tmp =  tmp.filter((_, index) => !indexesInShipmentExistedBefore.includes(index));
+        tmp = tmp.filter((_, index) => !indexesInShipmentExistedBefore.includes(index));
         sku.listShipmentID = [...referenceIDs, ...sku.listShipmentID]
-        sku.listQuantityOfShipment = [...tmp, ... sku.listQuantityOfShipment]
-        if(sku.sku =="4pack-chargerprotector"){
-            console.log("jijii",indexesInShipmentExistedBefore[i],sku);
+        sku.listQuantityOfShipment = [...tmp, ...sku.listQuantityOfShipment]
+        if (sku.sku == "4pack-chargerprotector") {
+            console.log("jijii", indexesInShipmentExistedBefore[i], sku);
         }
         sku.listShipmentID = sku.listShipmentID.join(',');
         sku.listQuantityOfShipment = sku.listQuantityOfShipment.join(',');
@@ -455,7 +455,26 @@ const findDate = async (skuData, transactions, cog) => {
         element.listShipmentID = element.listShipmentID.split(',');
         element.listQuantityOfShipment = element.listQuantityOfShipment.split(',');
         const index = element.listShipmentID.indexOf(element.shipmentID);
-        if (element.nextShipmentID != null && element.listQuantityOfShipment[index] > 0) {
+        if (element.listQuantityOfShipment[index] > 0) {
+            // tim cac ngay chuyen giao cho cac sku dạng BeanSlicer-3in1Peeler
+            let dateExchange = transactions.filter(t => t.sku == element.sku && t.shipmentID != undefined)
+            if (dateExchange.length == 0) {
+                let tmp = transactions.filter(t=> t.sku == element.sku && t.type != "Receipts")
+                const d = new Date(tmp[tmp.length-1].date);
+                d.setFullYear(d.getFullYear() + 3);
+                tmp[tmp.length-1].shipmentID = element.listShipmentID[index];
+                cogs.push(new Cog(
+                    tmp[tmp.length-1].sku,
+                    element.fnsku,
+                    element.listShipmentID[index],
+                    null,
+                    new Date(tmp[tmp.length-1].date),
+                    new Date(d),
+                    0,
+                    element.listShipmentID[index-1],
+                    null
+                ));
+            }
             const matchingTransaction = transactions.find(t => (element.shipmentID === t.shipmentID && t.sku === element.sku));
             if (matchingTransaction) {
                 let total = 0;
@@ -609,7 +628,7 @@ const findDateForSKuNotExistedBefore = async (skuData, transactions) => {
     for (let i = 0; i < skuData.length; i++) {
         const element = skuData[i];
         const index = element.listShipmentID.indexOf(element.shipmentID);
-        if (element.nextShipmentID != null && element.listQuantityOfShipment[index] > 0) {
+        if (element.listQuantityOfShipment[index] > 0) {
             const matchingTransaction = transactions.find(t => (element.shipmentID === t.shipmentID && t.sku === element.sku));
             if (matchingTransaction) {
                 let total = 0;
@@ -832,6 +851,9 @@ let findDiffereceFromInventory = async (futureDate, inventoryData, transaction, 
     return futureDate
 }
 let writeCogs = async (url, finalDate, transactions, skus) => {
+    transactions = transactions.sort((a,b)=>{
+        return (new Date(b) - new Date(a))
+    })
     const res = await axios.get(url, { responseType: "arraybuffer" });
     const workbook = XLSX.read(res.data);
     const cogs = XLSX.utils.sheet_to_json(workbook.Sheets["Cost of Goods"])
@@ -842,8 +864,8 @@ let writeCogs = async (url, finalDate, transactions, skus) => {
         }
     }
     for (var i = 0; i < skus.length; i++) {
-        let filterTrans = transactions.filter(t => t.sku === skus[i].sku && t.type !== 'Receipts' && t.shipmentID != undefined)
-        let tmp = transactions.filter(t => t.sku === skus[i].sku && t.type !== 'Receipts')
+        let filterTrans = transactions.filter(t => t.sku === skus[i].sku && ((t.type !== 'Receipts' && t.shipmentID != undefined) || (t.type == "Receipts" && t.shipmentID != undefined)))
+        let tmp = transactions.filter(t => t.sku === skus[i].sku && (t.type !== 'Receipts' || (t.type == "Receipts" && t.shipmentID != undefined)))
         if (filterTrans.length != 0) {
             for (var j = filterTrans.length - 1; j > 0; j--) {
                 let belowIndex = tmp.indexOf(filterTrans[j])
@@ -914,7 +936,7 @@ GenerateFile = async () => {
         )
     })
     // lọc date trước khi xử lí các đoạn sau
-    inventoryLedger = inventoryLedger.filter(i => (new Date(i.date_time) >= new Date("05/03/2023") &&
+    inventoryLedger = inventoryLedger.filter(i => (new Date(i.date_time) >= new Date("05/06/2023") &&
         new Date(i.date_time) < new Date("08/14/2023")))
 
     let transations = getListTransaction(inventoryLedger)
@@ -1008,7 +1030,7 @@ GenerateFile = async () => {
     delete_cols(skuData, 4, 5)
     //delete_cols(returnSheet, 0, 1)
     //delete_cols(returnSheet, 3, 5)
-    XLSX.writeFile(workbook, 'final.xlsx');
+    XLSX.writeFile(workbook, 'inventory.xlsx');
 
 }
 
