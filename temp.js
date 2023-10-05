@@ -1,6 +1,6 @@
 const XLSX = require('xlsx');
-const il = XLSX.readFile("./input/T8/Inventory-Ledger-10.08.22-13.08.23.xlsx")
-const inventory = XLSX.readFile('./input/T8/Inventory-14.08.xlsx')
+const il = XLSX.readFile("./input/T8/Inventory Ledger 01.01.23 - 30.09.23.xlsx")
+const inventory = XLSX.readFile('./input/T8/Inventory 03.10.xlsx')
 const workbook = XLSX.readFile('output.xlsx');
 const { getJsDateFromExcel } = require("excel-date-to-js");
 const axios = require('axios')
@@ -899,8 +899,8 @@ let writeCogs = async (url, finalDate, transactions, skus) => {
 }
 
 GenerateFile = async () => {
-    const ws1 = il.Sheets["Inventory Ledger 10.08.22 - 13."]
-    const inventorySheet = inventory.Sheets["Inventory 14.08"]
+    const ws1 = il.Sheets["Inventory Ledger 01.01.23 - 30."]
+    const inventorySheet = inventory.Sheets["Inventory 03.10"]
     const worksheet = workbook.Sheets['Danh sách giao dịch bổ sung']; // Replace 'Sheet1' with the actual sheet name
     const ws2 = workbook.Sheets['Ngày chuyển giao'];
     let skuData = workbook.Sheets['Giao dịch phát sinh']
@@ -937,7 +937,7 @@ GenerateFile = async () => {
     })
     // lọc date trước khi xử lí các đoạn sau
     inventoryLedger = inventoryLedger.filter(i => (new Date(i.date_time) >= new Date("05/06/2023") &&
-        new Date(i.date_time) < new Date("08/14/2023")))
+        new Date(i.date_time) < new Date("10/03/2023")))
 
     let transations = getListTransaction(inventoryLedger)
     let futureDate = await findFutureDate(skus, transations);
