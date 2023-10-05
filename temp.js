@@ -258,9 +258,7 @@ let findFutureDate = async (skuData, transations) => {
         tmp = tmp.filter((_, index) => !indexesInShipmentExistedBefore.includes(index));
         sku.listShipmentID = [...referenceIDs, ...sku.listShipmentID]
         sku.listQuantityOfShipment = [...tmp, ...sku.listQuantityOfShipment]
-        if (sku.sku == "4pack-chargerprotector") {
-            console.log("jijii", indexesInShipmentExistedBefore[i], sku);
-        }
+
         sku.listShipmentID = sku.listShipmentID.join(',');
         sku.listQuantityOfShipment = sku.listQuantityOfShipment.join(',');
     })
@@ -459,19 +457,19 @@ const findDate = async (skuData, transactions, cog) => {
             // tim cac ngay chuyen giao cho cac sku dạng BeanSlicer-3in1Peeler
             let dateExchange = transactions.filter(t => t.sku == element.sku && t.shipmentID != undefined)
             if (dateExchange.length == 0) {
-                let tmp = transactions.filter(t=> t.sku == element.sku && t.type != "Receipts")
-                const d = new Date(tmp[tmp.length-1].date);
+                let tmp = transactions.filter(t => t.sku == element.sku && t.type != "Receipts")
+                const d = new Date(tmp[tmp.length - 1].date);
                 d.setFullYear(d.getFullYear() + 3);
-                tmp[tmp.length-1].shipmentID = element.listShipmentID[index];
+                tmp[tmp.length - 1].shipmentID = element.listShipmentID[index];
                 cogs.push(new Cog(
-                    tmp[tmp.length-1].sku,
+                    tmp[tmp.length - 1].sku,
                     element.fnsku,
                     element.listShipmentID[index],
                     null,
-                    new Date(tmp[tmp.length-1].date),
+                    new Date(tmp[tmp.length - 1].date),
                     new Date(d),
                     0,
-                    element.listShipmentID[index-1],
+                    element.listShipmentID[index - 1],
                     null
                 ));
             }
@@ -553,6 +551,8 @@ const findNextDate = async (skuData, transactions, remainder) => {
                 date: null
             });
         }
+        // cho chắc các trường next shipment is undefined
+        skuData.nextShipmentID = skuData.listShipmentID[index-1]
     }
     let filteredTransactions = listTransactionOfSku;
     const startIndex = listTransactionOfSku.findIndex(t => t.shipmentID === skuData.nextShipmentID);
@@ -851,7 +851,7 @@ let findDiffereceFromInventory = async (futureDate, inventoryData, transaction, 
     return futureDate
 }
 let writeCogs = async (url, finalDate, transactions, skus) => {
-    transactions = transactions.sort((a,b)=>{
+    transactions = transactions.sort((a, b) => {
         return (new Date(b) - new Date(a))
     })
     const res = await axios.get(url, { responseType: "arraybuffer" });
