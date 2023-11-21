@@ -249,7 +249,7 @@ const findPreviousDate = async (skuData, transaction, remainder, currentDate) =>
     let tmp = [];
     let rs = [];
     let index = skuData.listShipmentID.indexOf(skuData.shipmentID);
-    skuData.listQuantityOfShipment[index + 1] += remainder;
+    // skuData.listQuantityOfShipment[index + 1] += remainder;
     for (let i = index + 1; i < skuData.listShipmentID.length; i++) {
         tmp.push({
             shipmentID: skuData.listShipmentID[i],
@@ -261,50 +261,56 @@ const findPreviousDate = async (skuData, transaction, remainder, currentDate) =>
 
     const startIndex = listTransactionOfSku.findIndex(t => t.shipmentID === skuData.shipmentID);
     filteredTransactions = listTransactionOfSku.slice(startIndex + 1);
-    const processNextTmpElement = (index) => {
+    const processNextTmpElement = (index, remain) => {
+        let remainTmp = 0;
         if (index >= tmp.length) {
             return;
         }
-
-        let total = 0;
-        filteredTransactions = filteredTransactions.filter(t => t.sku === skuData.sku)
-        for (let j = 0; j < filteredTransactions.length; j++) {
-            const t = filteredTransactions[j];
-            total += t.quantity;
-            if (-tmp[index].quantityOfShipment >= total) {
-                t.shipmentID = tmp[index].shipmentID;
-                tmp[index].date = new Date(t.date)
-                if (index == 0) {
-                    var currentDateTime = new Date(currentDate);
-                    var previousDateTime = new Date(currentDateTime.getTime() - (24 * 60 * 60 * 1000));
-                    var previousDateTimeString = previousDateTime.toISOString();
-                    rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date), new Date(previousDateTimeString), total + tmp[index].quantityOfShipment, skuData.shipmentID, null));
-                } else {
-                    var currentDateTime = new Date(tmp[index - 1].date);
-                    var previousDateTime = new Date(currentDateTime.getTime() - (24 * 60 * 60 * 1000));
-                    var previousDateTimeString = previousDateTime.toISOString();
-                    rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date), new Date(previousDateTimeString), total + tmp[index].quantityOfShipment, tmp[index - 1]?.shipmentID, null));
+        if (tmp[index].quantityOfShipment > 0) {
+            let total = 0;
+            total += remain;
+            filteredTransactions = filteredTransactions.filter(t => t.sku === skuData.sku)
+            for (let j = 0; j < filteredTransactions.length; j++) {
+                const t = filteredTransactions[j];
+                total += t.quantity;
+                if (-tmp[index].quantityOfShipment >= total) {
+                    remainTmp = total + tmp[index].quantityOfShipment
+                    t.shipmentID = tmp[index].shipmentID;
+                    tmp[index].date = new Date(t.date)
+                    if (index == 0) {
+                        var currentDateTime = new Date(currentDate);
+                        var previousDateTime = new Date(currentDateTime.getTime() - (24 * 60 * 60 * 1000));
+                        var previousDateTimeString = previousDateTime.toISOString();
+                        rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date), new Date(previousDateTimeString), total + tmp[index].quantityOfShipment, skuData.shipmentID, null));
+                    } else {
+                        var currentDateTime = new Date(tmp[index - 1].date);
+                        var previousDateTime = new Date(currentDateTime.getTime() - (24 * 60 * 60 * 1000));
+                        var previousDateTimeString = previousDateTime.toISOString();
+                        rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date), new Date(previousDateTimeString), total + tmp[index].quantityOfShipment, tmp[index - 1]?.shipmentID, null));
+                    }
+                    break;
                 }
-                break;
+                if (j == (filteredTransactions.length - 1) && -tmp[index].quantityOfShipment < total) {
+                    var currentDateTime = new Date(tmp[index - 1]?.date);
+                    t.shipmentID = tmp[index].shipmentID;
+                    rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date),
+                        currentDateTime, total + tmp[index].quantityOfShipment, tmp[index - 1]?.shipmentID, null));
+                }
             }
-            if (j == (filteredTransactions.length - 1) && -tmp[index].quantityOfShipment < total) {
-                var currentDateTime = new Date(tmp[index - 1]?.date);
-                t.shipmentID = tmp[index].shipmentID;
-                rs.push(new Cog(t.sku, t.fnsku, tmp[index].shipmentID, null, new Date(t.date),
-                    currentDateTime, total + tmp[index].quantityOfShipment, tmp[index - 1]?.shipmentID, null));
-            }
+
+            // Update filteredTransactions based on the updated shipmentID
+            let s = filteredTransactions.findIndex(t => t.shipmentID === tmp[index].shipmentID);
+            filteredTransactions = filteredTransactions.slice(s + 1);
+
+            // Process the next element in tmp array recursively
+            processNextTmpElement(index + 1, remainTmp);
+        } else {
+            processNextTmpElement(index + 1, remain);
         }
-
-        // Update filteredTransactions based on the updated shipmentID
-        let s = filteredTransactions.findIndex(t => t.shipmentID === tmp[index].shipmentID);
-        filteredTransactions = filteredTransactions.slice(s + 1);
-
-        // Process the next element in tmp array recursively
-        processNextTmpElement(index + 1);
     };
 
     // Start the recursive processing from the first element of tmp array
-    processNextTmpElement(0);
+    processNextTmpElement(0, remainder);
 
     // Return the result array rs or perform additional operations if needed
     return rs;
@@ -388,6 +394,17 @@ const findOriginalData = async (data, inventory) => {
         obj.listQuantityOfShipment
     ));
 }
+const findDateAfterSetShipment = async(date,skus)=>{
+    skus.forEach(s=>{
+        let dateOfSku = date.filter(d=> d.sku == s.sku);
+        for(let i =0;i< dateOfSku.length-1 ;i++){
+            for (let j = i+1; j < dateOfSku.length; j++) {
+                dateOfSku[j].next_shipment= dateOfSku[i].current_shipment
+            }
+        }
+    })
+    return date;
+}
 
 GenerateFile = async () => {
     const ws1 = il.Sheets["257487019573"]
@@ -421,7 +438,7 @@ GenerateFile = async () => {
     let transaction_receipts = transations.filter(t => t.type === "Receipts")
     let rs = getSKUData(inventoryLedger, inventory);
     let result = await findDate(rs, transations)
-    let date = result[0];
+    let date = await findDateAfterSetShipment(result[0],rs);
     let transaction_shipment = [...result[1], ...transaction_receipts];
 
     let newRusult = await handleWriteAllShipment(rs);

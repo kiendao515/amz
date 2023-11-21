@@ -263,8 +263,8 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
   });
   // sửa date ở ddây
   paymentList.forEach(payment => {
-    if (new Date("09/01/2023") <= new Date(payment.date.includes("PDT") ? payment.date.replace(" PDT", "") : payment.date.replace(" PST", "")) &&
-      new Date(payment.date.includes("PDT") ? payment.date.replace(" PDT", "") : payment.date.replace(" PST", "")) < new Date("10/01/2023")) {
+    if (new Date("10/01/2023") <= new Date(payment.date.includes("PDT") ? payment.date.replace(" PDT", "") : payment.date.replace(" PST", "")) &&
+      new Date(payment.date.includes("PDT") ? payment.date.replace(" PDT", "") : payment.date.replace(" PST", "")) < new Date("11/01/2023")) {
       const { sku, type, quantity, product_sales, product_sales_tax, shipping_credits, shipping_credit_tax,
         gift_wrap_credits, gift_wrap_credits_tax, regulatory_fee, regulatory_fee_tax, promotional_rebates,
         promotional_rebates_tax, marketplace_withheld_tax, selling_fee, fba_fee, other_transaction_fee, other,
@@ -495,8 +495,8 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
     return null; // input format not recognized
   }
   adjustment.forEach(a => {
-    var startDate = parseDate("09/01/2023")
-    var endDate = parseDate("10/01/2023")
+    var startDate = parseDate("10/01/2023")
+    var endDate = parseDate("11/01/2023")
     var aDate = a.date.length > 7 ? parseDate(a.date) : parseDate(getJsDateFromExcel(a.date).getDate() + "/" + Number(getJsDateFromExcel(a.date).getMonth() + 1) + "/" + getJsDateFromExcel(a.date).getFullYear())
     costOfGods.forEach(skuInfo => {
       const { sku, fnsku } = skuInfo;
@@ -565,8 +565,8 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
   });
   // sửa date
   customerReturn.forEach(c => {
-    var startDate = parseDate("09/01/2023")
-    var endDate = parseDate("10/01/2023")
+    var startDate = parseDate("10/01/2023")
+    var endDate = parseDate("11/01/2023")
     var aDate = c.last_updated_date.length > 7 ? parseDate(c.last_updated_date.substring(0, 10)) : parseDate(getJsDateFromExcel(c.last_updated_date).getDate() + "/" + Number(getJsDateFromExcel(c.last_updated_date).getMonth() + 1) + "/" + getJsDateFromExcel(c.last_updated_date).getFullYear())
     costOfGods.forEach(skuInfo => {
       const { sku, fnsku } = skuInfo;
@@ -625,7 +625,7 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
           }
           v.removal_disposal += (disposed_quantity != undefined && disposed_quantity != "") ? parseInt(disposed_quantity) : 0
         }
-        console.log(removal_fee);
+
         v.disposal_fee += (removal_fee != undefined && removal_fee != "") ? parseFloat(removal_fee) : 0;
       }
     });
@@ -679,7 +679,7 @@ function getSKUData(paymentList, costOfGods, ads_brand, ads_display, ads_product
 // cần sửa date ở đây nhé
 let findCogs = async (rs, cogs_data) => {
   rs.forEach(sku => {
-    let skuData = cogs_data.filter(t => t.sku === sku.sku && (new Date(t.date) >= new Date("09/01/2023")) && (new Date(t.date) < new Date("10/01/2023")) && t.disposition == "SELLABLE")
+    let skuData = cogs_data.filter(t => t.sku === sku.sku && (new Date(t.date) >= new Date("10/01/2023")) && (new Date(t.date) < new Date("11/01/2023")) && t.disposition == "SELLABLE")
     if (skuData.length > 0) {
       sku.cogs_shipped = 0;
       sku.cogs_removal = 0;
@@ -721,8 +721,8 @@ let splitEmptySku = async (data, payments) => {
   const nullSkuElements = data.filter((item) => (item.sku == undefined || item.sku == ''));
   const nonNullSkuElements = data.filter((item) => (item.sku !== undefined && item.sku != ''));
   let newData = [...nonNullSkuElements];
-  let filterPayments = payments.filter(p => (p.sku == '' && (new Date(p.date) >= new Date("2023-09-01T00:00:00-07:00"))
-    && (new Date(p.date) < new Date("2023-10-01T00:00:00-07:00"))));
+  let filterPayments = payments.filter(p => (p.sku == '' && (new Date(p.date) >= new Date("2023-10-01T00:00:00-07:00"))
+    && (new Date(p.date) < new Date("2023-11-01T00:00:00-07:00"))));
   let count = 0;
   let sub_fee = 0, sub_fee_adjustment = 0, early_reviewer_program_fee = 0, vine_Enrollment_Fee = 0, coupom_fee = 0, lighting_deal_fee = 0,
     commisstion_adjustment = 0, fee_adjustment = 0, fba_inventory = 0, other = 0, fba_amazon = 0, fba_international = 0, advertising_payment = 0, previous_storage_fee = 0,
@@ -967,7 +967,7 @@ let findRemainFields = async (splitEmptySkuData, payments) => {
     sku.net_profit = sku.gross_profits_overall + sku.tcogs
     // sku.group = undefined;
     let tmp = payments.filter(p => p.sku == sku.sku && p.description == "FBA Inventory Reimbursement - Lost:Inbound" &&
-      (new Date(p.date) >= new Date("09/01/2023")) && (new Date(p.date) < new Date("10/01/2023")))
+      (new Date(p.date) >= new Date("10/01/2023")) && (new Date(p.date) < new Date("11/01/2023")))
     sku.reimbursed_quantity = 0;
     sku.reimbursement_for_missing_quantity = 0;
     if (tmp) {
@@ -1004,16 +1004,16 @@ let GenerateFile = async () => {
   const cogs_sheet = cogs.Sheets["transaction list"]
 
   // another way using csv
-  const payment_csv = './input/2023/T8/Payment 01.01.23 - 30.09.23.csv';
-  const storage_csv = './input/2023/T8/Storage Fee T8.23.csv';
-  const surcharge_csv = './input/2023/T9/Surcharge Fee T9.23.csv';
-  const removal_csv = "./input/2023/T8/Removal Fee 01.01.23 - 30.09.23.csv"
-  const inventory_ledger_csv = "./input/2023/T8/Inventory Ledger 01.01.23 - 30.09.23.csv"
+  const payment_csv = './input/2023/T10/Payment T10.23.csv';
+  const storage_csv = './input/2023/T9/Storage Fee T9.23.csv';
+  const surcharge_csv = './input/2023/T10/Surcharge Fee T10.23.csv';
+  const removal_csv = "./input/2023/T10/Removal Fee T10.23.csv"
+  const inventory_ledger_csv = "./input/2023/T10/Inventory Ledger T10.23.csv"
 
   // handle ads
-  const wb_ads_product = XLSX.readFile('./input/2023/T9/Sponsored Products Advertised product report T9.23.xlsx')
-  const wb_ads_display = XLSX.readFile('ads_display.xlsx')
-  const wb_ads_brand = XLSX.readFile('./input/2023/T9/Sponsored Brands Campaign report T9.23.xlsx')
+  const wb_ads_product = XLSX.readFile('./input/2023/T10/Sponsored Products Advertised product report T10.23.xlsx')
+  const wb_ads_display = XLSX.readFile('./input/2023/T10/Sponsored Display Advertised product report T10.23.xlsx')
+  const wb_ads_brand = XLSX.readFile('./input/2023/T10/Sponsored Brands Campaign report T10.23.xlsx')
   let ads_product = []
   ads_product = XLSX.utils.sheet_to_json(wb_ads_product.Sheets['Sponsored Product Advertised Pr']).map(row => {
     return new Ads(
@@ -1203,7 +1203,7 @@ let GenerateFile = async () => {
     ]);
   //   let rs = getSKUData(payments, costOfGods, ads_brand, ads_display, ads_product, storageFee, surChargeFee, adjustment,
   //     customerReturn);
-  let rs = getSKUData(payments, costOfGods, ads_brand, null, ads_product, null, surChargeFee, adjustment,
+  let rs = getSKUData(payments, costOfGods, ads_brand, ads_display, ads_product, null, surChargeFee, adjustment,
     customerReturn);
   let final = await findCogs(rs, cogs_data)
   let finalData = []
